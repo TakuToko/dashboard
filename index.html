@@ -159,14 +159,14 @@
     <!-- 快捷标签 -->
     <div class="mt-3 flex items-center gap-2 flex-wrap text-xs">
       <span class="text-slate-500">💡 试试：</span>
-      <button onclick="setQuery('万象棋 ELO 控牌 差评')" class="px-2.5 py-1 rounded-full border transition"
-        style="border-color: var(--color-a); color: var(--color-a)" onmouseover="this.style.background='var(--color-a-soft)'" onmouseout="this.style.background='transparent'">万象棋 ELO</button>
+      <button onclick="setQuery('万象棋 ELO 控牌')" class="px-2.5 py-1 rounded-full border transition"
+        style="border-color: var(--color-a); color: var(--color-a)" onmouseover="this.style.background='var(--color-a-soft)'" onmouseout="this.style.background='transparent'">万象棋 ELO 控牌</button>
       <button onclick="setQuery('金铲铲 外挂 脚本')" class="px-2.5 py-1 rounded-full border transition"
-        style="border-color: var(--color-b); color: var(--color-b)" onmouseover="this.style.background='var(--color-b-soft)'" onmouseout="this.style.background='transparent'">金铲铲 外挂</button>
+        style="border-color: var(--color-b); color: var(--color-b)" onmouseover="this.style.background='var(--color-b-soft)'" onmouseout="this.style.background='transparent'">金铲铲 外挂 脚本</button>
       <button onclick="setQuery('万象棋 画面 IP 情怀')" class="px-2.5 py-1 rounded-full border transition"
-        style="border-color: var(--color-a); color: var(--color-a)" onmouseover="this.style.background='var(--color-a-soft)'" onmouseout="this.style.background='transparent'">万象棋 画面</button>
+        style="border-color: var(--color-a); color: var(--color-a)" onmouseover="this.style.background='var(--color-a-soft)'" onmouseout="this.style.background='transparent'">万象棋 画面 IP</button>
       <button onclick="setQuery('金铲铲 老玩家 经典')" class="px-2.5 py-1 rounded-full border transition"
-        style="border-color: var(--color-b); color: var(--color-b)" onmouseover="this.style.background='var(--color-b-soft)'" onmouseout="this.style.background='transparent'">金铲铲 老玩家</button>
+        style="border-color: var(--color-b); color: var(--color-b)" onmouseover="this.style.background='var(--color-b-soft)'" onmouseout="this.style.background='transparent'">金铲铲 老玩家 经典</button>
     </div>
   </div>
 
@@ -773,39 +773,74 @@ function showToast(msg) {
 
 // ---- 启动：加载版本列表 + 默认数据 + LLM 配置 ----
 (async function initDashboard() {
+  console.log("🚀 [initDashboard] 开始初始化...");
+
   // 加载 LLM API 配置（填过的话自动填回表单）
   loadLLMConfig();
 
   // 加载版本下拉框
   await loadVersionList();
 
-  // 决定加载哪个版本：localStorage > versions.current > analysis.json
+  // 决定加载哪个版本：localStorage > versions.current > 可用列表第一个
   let preferredVersion = localStorage.getItem("taptap_dashboard_version");
-  if (!preferredVersion && VERSIONS) {
+  if (!preferredVersion && VERSIONS && VERSIONS.current) {
     preferredVersion = VERSIONS.current;
   }
+  if (!preferredVersion && VERSIONS?.available?.length > 0) {
+    preferredVersion = VERSIONS.available[0].id;
+  }
+  console.log("📋 [initDashboard] 首选版本:", preferredVersion || "(无)");
 
+  const TS = Date.now();
   try {
     let data;
+    // 路径 1：首选版本的 analyses/ 文件
     if (preferredVersion) {
-      const resp = await fetch(`analyses/analysis_${preferredVersion}.json?t=${Date.now()}`);
+      const url = `analyses/analysis_${preferredVersion}.json?t=${TS}`;
+      console.log("   尝试:", url);
+      const resp = await fetch(url);
       if (resp.ok) {
         data = await resp.json();
+        console.log("   ✅ 成功，来源: analyses/analysis_" + preferredVersion + ".json");
+      } else {
+        console.warn(`   ❌ HTTP ${resp.status}，跳过首选版本`);
       }
     }
-    // fallback：根目录 analysis.json
+    // 路径 2：versions 列表里第一个可用的
+    if (!data && VERSIONS?.available?.length > 0) {
+      for (const v of VERSIONS.available) {
+        const url = `analyses/analysis_${v.id}.json?t=${TS}`;
+        console.log("   尝试:", url);
+        const resp = await fetch(url);
+        if (resp.ok) {
+          data = await resp.json();
+          console.log("   ✅ 成功，来源: analyses/analysis_" + v.id + ".json");
+          break;
+        }
+      }
+    }
+    // 路径 3：根目录 analysis.json（加时间戳防浏览器缓存）
     if (!data) {
-      const resp = await fetch("analysis.json");
+      const url = `analysis.json?t=${TS}`;
+      console.log("   尝试:", url);
+      const resp = await fetch(url);
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       data = await resp.json();
+      console.log("   ✅ 成功，来源: analysis.json");
     }
+
+    if (!data || !data.overview) {
+      throw new Error("数据字段不完整（缺少 overview）");
+    }
+
     DATA = data;
     console.log("✅ 数据加载成功", Object.keys(data));
     renderAll();
+    showToast("📊 已加载 " + (data.version_id || "默认") + " · " + (data.overview?.total_reviews || "?") + " 条评论");
   } catch (err) {
-    console.error("❌ 加载 analysis.json 失败:", err);
+    console.error("❌ 数据加载失败:", err);
     document.body.innerHTML +=
-      '<div class="text-center p-8 text-red-400">❌ 无法加载 analysis.json，请用 http 服务打开此页面（VS Code Live Server 或 python -m http.server）</div>';
+      '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f172a;color:#f87171;font-size:14px">❌ 无法加载数据，请用 HTTP 服务打开（python -m http.server 8765）</div>';
   }
 })();
 
