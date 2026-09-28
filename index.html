@@ -739,13 +739,7 @@ function uploadJsonVersion(fileInput) {
 }
 
 function refreshVersions() {
-  loadVersionList().then(() => {
-    const sel = document.getElementById("version-select");
-    if (VERSIONS && VERSIONS.current) {
-      sel.value = VERSIONS.current;
-      switchDashboardVersion(VERSIONS.current);
-    }
-  });
+  loadVersionList().then(() => loadDefaultData("🔄 已重新加载"));
 }
 
 function applyNewData(data, toastMsg) {
@@ -771,78 +765,71 @@ function showToast(msg) {
   setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 300); }, 2000);
 }
 
-// ---- 启动：加载版本列表 + 默认数据 + LLM 配置 ----
-(async function initDashboard() {
-  console.log("🚀 [initDashboard] 开始初始化...");
+/**
+ * 🆕 统一的数据加载入口 —— 首屏初始化和点击刷新都走这里
+ * 解决：首屏用 initDashboard，刷新用 switchDashboardVersion，两条路径行为不一致
+ */
+async function loadDefaultData(successMsg) {
+  const TS = Date.now();
 
-  // 加载 LLM API 配置（填过的话自动填回表单）
-  loadLLMConfig();
-
-  // 加载版本下拉框
-  await loadVersionList();
-
-  // 决定加载哪个版本：localStorage > versions.current > 可用列表第一个
+  // 决定首选版本：localStorage > versions.current > 可用列表第一个
   let preferredVersion = localStorage.getItem("taptap_dashboard_version");
-  if (!preferredVersion && VERSIONS && VERSIONS.current) {
+  if (!preferredVersion && VERSIONS?.current) {
     preferredVersion = VERSIONS.current;
   }
   if (!preferredVersion && VERSIONS?.available?.length > 0) {
     preferredVersion = VERSIONS.available[0].id;
   }
-  console.log("📋 [initDashboard] 首选版本:", preferredVersion || "(无)");
+  console.log("📋 [loadDefaultData] 首选版本:", preferredVersion || "(无)");
 
-  const TS = Date.now();
-  try {
-    let data;
-    // 路径 1：首选版本的 analyses/ 文件
-    if (preferredVersion) {
-      const url = `analyses/analysis_${preferredVersion}.json?t=${TS}`;
-      console.log("   尝试:", url);
-      const resp = await fetch(url);
-      if (resp.ok) {
-        data = await resp.json();
-        console.log("   ✅ 成功，来源: analyses/analysis_" + preferredVersion + ".json");
-      } else {
-        console.warn(`   ❌ HTTP ${resp.status}，跳过首选版本`);
-      }
-    }
-    // 路径 2：versions 列表里第一个可用的
-    if (!data && VERSIONS?.available?.length > 0) {
-      for (const v of VERSIONS.available) {
-        const url = `analyses/analysis_${v.id}.json?t=${TS}`;
-        console.log("   尝试:", url);
-        const resp = await fetch(url);
-        if (resp.ok) {
-          data = await resp.json();
-          console.log("   ✅ 成功，来源: analyses/analysis_" + v.id + ".json");
-          break;
-        }
-      }
-    }
-    // 路径 3：根目录 analysis.json（加时间戳防浏览器缓存）
-    if (!data) {
-      const url = `analysis.json?t=${TS}`;
-      console.log("   尝试:", url);
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error("HTTP " + resp.status);
+  let data;
+
+  // 路径 1: 首选版本
+  if (preferredVersion) {
+    const url = `analyses/analysis_${preferredVersion}.json?t=${TS}`;
+    const resp = await fetch(url);
+    if (resp.ok) {
       data = await resp.json();
-      console.log("   ✅ 成功，来源: analysis.json");
+      console.log("   ✅ 路径1 命中:", url);
+    } else {
+      console.warn("   ❌ 路径1 失败 HTTP " + resp.status + "，跳过");
     }
-
-    if (!data || !data.overview) {
-      throw new Error("数据字段不完整（缺少 overview）");
-    }
-
-    DATA = data;
-    console.log("✅ 数据加载成功", Object.keys(data));
-    renderAll();
-    showToast("📊 已加载 " + (data.version_id || "默认") + " · " + (data.overview?.total_reviews || "?") + " 条评论");
-  } catch (err) {
-    console.error("❌ 数据加载失败:", err);
-    document.body.innerHTML +=
-      '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f172a;color:#f87171;font-size:14px">❌ 无法加载数据，请用 HTTP 服务打开（python -m http.server 8765）</div>';
   }
-})();
+
+  // 路径 2: versions 列表里逐个试
+  if (!data && VERSIONS?.available?.length > 0) {
+    for (const v of VERSIONS.available) {
+      if (v.id === preferredVersion) continue;  // 已试过
+      const url = `analyses/analysis_${v.id}.json?t=${TS}`;
+      const resp = await fetch(url);
+      if (resp.ok) { data = await resp.json(); console.log("   ✅ 路径2 命中:", url); break; }
+    }
+  }
+
+  // 路径 3: 根目录 analysis.json
+  if (!data) {
+    const url = `analysis.json?t=${TS}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    data = await resp.json();
+    console.log("   ✅ 路径3 命中:", url);
+  }
+
+  if (!data || !data.overview) throw new Error("数据字段不完整（缺少 overview）");
+
+  DATA = data;
+  console.log("✅ loadDefaultData 完成，overview keys:", Object.keys(data.overview));
+  renderAll();
+  showToast(successMsg || ("📊 已加载 " + (data.version_id || "默认") + " · " + (data.overview?.total_reviews || "?") + " 条评论"));
+}
+
+// ---- 启动：DOM + CDN 脚本都就绪后才跑 ----
+document.addEventListener("DOMContentLoaded", async () => {
+  console.log("🚀 DOMContentLoaded: 开始初始化...");
+  loadLLMConfig();     // 把存过的 API Key 自动填回表单
+  await loadVersionList();
+  await loadDefaultData();
+});
 
 // ---- 数字动画 ----
 function animateNum(el, target, decimals = 0) {
