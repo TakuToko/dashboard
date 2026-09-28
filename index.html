@@ -1,0 +1,1927 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>自走棋竞品分析 · 王者万象棋 vs 金铲铲之战</title>
+
+<!-- 🎨 主题配置（最先加载，后面所有颜色都从这里读） -->
+<script src="theme.js"></script>
+<link rel="stylesheet" href="theme.css" />
+
+<!-- Tailwind CSS (CDN) — 颜色从 THEME 动态注入 -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Markdown 渲染器 -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          wzq: THEME.color_a,
+          jcc: THEME.color_b,
+          dark: THEME_BG.surface,
+          surface: THEME_BG.surface,
+          accent: THEME.accent,
+        },
+        fontFamily: {
+          sans: ['"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
+        }
+      }
+    }
+  }
+</script>
+
+<!-- ECharts -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<!-- ECharts WordCloud -->
+<script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+
+<style>
+  .chart-box { width: 100%; height: 380px; }
+  .chart-box-sm { width: 100%; height: 280px; }
+  .wordcloud-box { width: 100%; height: 320px; }
+</style>
+</head>
+
+<body>
+
+<!-- ==================== HERO HEADER ==================== -->
+<header class="relative pt-16 pb-10 text-center fade-in z-10">
+  <!-- 主题标签徽章 -->
+  <div class="flex justify-center gap-3 mb-6">
+    <span class="header-badge px-4 py-1.5 text-xs font-medium tracking-wider uppercase text-wzq">
+      ⚔️ 王者万象棋
+    </span>
+    <span class="header-badge px-4 py-1.5 text-xs font-medium tracking-wider uppercase text-jcc">
+      🔮 金铲铲之战
+    </span>
+  </div>
+
+  <h1 class="hero-title text-5xl md:text-6xl lg:text-7xl font-black leading-tight tracking-tight">
+    自走棋竞品分析
+  </h1>
+
+  <!-- 副标题 -->
+  <p class="mt-4 text-slate-400 text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
+    基于 <span class="text-slate-300 font-medium">600 条</span> TapTap 真实用户评论 · 
+    王者万象棋 <span class="text-wzq font-semibold">首发</span> vs 
+    金铲铲之战 <span class="text-jcc font-semibold">运营五年</span>
+  </p>
+
+  <!-- Hero 分隔装饰线 -->
+  <div class="hero-divider w-48 mx-auto mt-8"></div>
+
+  <!-- 元信息 -->
+  <div class="mt-6 flex flex-wrap justify-center gap-6 text-xs text-slate-500">
+    <span class="flex items-center gap-1.5">
+      <span class="w-1.5 h-1.5 rounded-full bg-wzq"></span>
+      TapTap 评论数据
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="w-1.5 h-1.5 rounded-full bg-jcc"></span>
+      采集时间 2026-09-22
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="w-1.5 h-1.5 rounded-full" style="background:var(--color-accent)"></span>
+      jieba 分词 + ECharts 可视化
+    </span>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 pb-16 relative z-10">
+
+<!-- ==================== 🆕 知识库版本选择 ==================== -->
+<section class="mb-4 fade-in">
+  <div class="glass px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <div class="flex items-center gap-3">
+      <span class="text-lg">📚</span>
+      <span class="text-xs text-slate-400 font-medium">知识库版本</span>
+      <select id="version-select" 
+        onchange="switchDashboardVersion(this.value)"
+        class="px-3 py-1.5 rounded-lg text-sm outline-none cursor-pointer font-medium"
+        style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold); min-width: 280px;">
+        <option value="" disabled>加载中...</option>
+      </select>
+      <span id="version-info" class="text-xs text-slate-500"></span>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="px-3 py-1.5 rounded-lg text-xs border cursor-pointer hover:opacity-80 transition inline-flex items-center gap-1"
+        style="border-color: var(--chart-axis); color: var(--chart-text-bold)">
+        📤 上传 JSON
+        <input type="file" accept=".json,application/json" onchange="uploadJsonVersion(this)" hidden>
+      </label>
+      <button onclick="refreshVersions()" class="px-3 py-1.5 rounded-lg text-xs hover:opacity-80 transition"
+        style="background: transparent; border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"
+        title="重新扫描 versions.json">🔄 刷新</button>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== BM25 语义检索搜索框 ==================== -->
+<section class="mb-6 fade-in">
+  <div class="glass p-5">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl">🔍</span>
+      <div class="flex-1 flex gap-3">
+        <input id="bm25-query" type="text" 
+          placeholder="输入关键词自然语言搜索评论，如：控牌 ELO / 金铲铲 外挂 / 万象棋 画面"
+          class="flex-1 px-4 py-2.5 rounded-lg text-sm outline-none"
+          style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"
+          onkeydown="if(event.key==='Enter') doBM25Search()">
+        <select id="bm25-filter-game" 
+          class="px-3 py-2.5 rounded-lg text-sm outline-none cursor-pointer"
+          style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+          <option value="">全部游戏</option>
+          <option value="王者万象棋">王者万象棋</option>
+          <option value="金铲铲之战">金铲铲之战</option>
+        </select>
+        <select id="bm25-filter-score" 
+          class="px-3 py-2.5 rounded-lg text-sm outline-none cursor-pointer"
+          style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+          <option value="">全部评分</option>
+          <option value="5">5 星（好评）</option>
+          <option value="4">4 星</option>
+          <option value="3">3 星（中评）</option>
+          <option value="2">2 星</option>
+          <option value="1">1 星（差评）</option>
+          <option value="low">1-2 星（差评合集）</option>
+          <option value="high">4-5 星（好评合集）</option>
+        </select>
+        <button onclick="doBM25Search()"
+          class="px-5 py-2.5 rounded-lg text-sm font-medium hover:opacity-90 transition"
+          style="background: var(--color-accent); color: #fff">搜索</button>
+        <button onclick="clearBM25Results()"
+          class="px-4 py-2.5 rounded-lg text-sm hover:opacity-80 transition"
+          style="background: transparent; border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">清空</button>
+      </div>
+    </div>
+    <!-- 快捷标签 -->
+    <div class="mt-3 flex items-center gap-2 flex-wrap text-xs">
+      <span class="text-slate-500">💡 试试：</span>
+      <button onclick="setQuery('万象棋 ELO 控牌 差评')" class="px-2.5 py-1 rounded-full border transition"
+        style="border-color: var(--color-a); color: var(--color-a)" onmouseover="this.style.background='var(--color-a-soft)'" onmouseout="this.style.background='transparent'">万象棋 ELO</button>
+      <button onclick="setQuery('金铲铲 外挂 脚本')" class="px-2.5 py-1 rounded-full border transition"
+        style="border-color: var(--color-b); color: var(--color-b)" onmouseover="this.style.background='var(--color-b-soft)'" onmouseout="this.style.background='transparent'">金铲铲 外挂</button>
+      <button onclick="setQuery('万象棋 画面 IP 情怀')" class="px-2.5 py-1 rounded-full border transition"
+        style="border-color: var(--color-a); color: var(--color-a)" onmouseover="this.style.background='var(--color-a-soft)'" onmouseout="this.style.background='transparent'">万象棋 画面</button>
+      <button onclick="setQuery('金铲铲 老玩家 经典')" class="px-2.5 py-1 rounded-full border transition"
+        style="border-color: var(--color-b); color: var(--color-b)" onmouseover="this.style.background='var(--color-b-soft)'" onmouseout="this.style.background='transparent'">金铲铲 老玩家</button>
+    </div>
+  </div>
+
+  <!-- BM25 检索结果展示 -->
+  <div id="bm25-results" class="mt-4 hidden">
+    <div class="glass p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-sm font-semibold">🔎 检索结果 <span id="bm25-count" class="text-slate-500"></span></h3>
+        <span id="bm25-score-note" class="text-xs text-slate-500"></span>
+      </div>
+      <div id="bm25-results-list" class="space-y-3 max-h-[500px] overflow-y-auto"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== KPI CARDS ==================== -->
+<section class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-6 fade-in">
+  <!-- 万象棋 平均分（我们抽样） -->
+  <div class="kpi-card p-6 text-center delay-100">
+    <div class="text-xs text-slate-400 mb-2 tracking-wider uppercase">王者万象棋 · 抽样均分</div>
+    <div id="kpi-wzq-score" class="text-4xl font-black glow-a num-animate">--</div>
+    <div id="kpi-wzq-5star" class="text-xs text-slate-500 mt-2">5星占比 --%</div>
+  </div>
+  <!-- 金铲铲 平均分（我们抽样） -->
+  <div class="kpi-card p-6 text-center delay-200">
+    <div class="text-xs text-slate-400 mb-2 tracking-wider uppercase">金铲铲之战 · 抽样均分</div>
+    <div id="kpi-jcc-score" class="text-4xl font-black glow-b num-animate">--</div>
+    <div id="kpi-jcc-5star" class="text-xs text-slate-500 mt-2">5星占比 --%</div>
+  </div>
+  <!-- 万象棋 评论数 -->
+  <div class="kpi-card p-6 text-center delay-300">
+    <div class="text-xs text-slate-400 mb-2 tracking-wider uppercase">万象棋 · 抽样评论</div>
+    <div id="kpi-wzq-count" class="text-4xl font-black glow-a num-animate">--</div>
+    <div id="kpi-wzq-hours" class="text-xs text-slate-500 mt-2">平均游戏 --h</div>
+  </div>
+  <!-- 金铲铲 评论数 -->
+  <div class="kpi-card p-6 text-center delay-400">
+    <div class="text-xs text-slate-400 mb-2 tracking-wider uppercase">金铲铲 · 抽样评论</div>
+    <div id="kpi-jcc-count" class="text-4xl font-black glow-b num-animate">--</div>
+    <div id="kpi-jcc-hours" class="text-xs text-slate-500 mt-2">平均游戏 --h</div>
+  </div>
+</section>
+
+<!-- ==================== 🆕 TapTap 官方数据卡片 ==================== -->
+<section id="section-app-stats" class="mb-8 fade-in">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="section-title text-lg font-semibold">📱 TapTap 官方数据（交叉验证）</h2>
+    <span class="text-xs text-slate-500">对比我们的抽样 vs TapTap 官方</span>
+  </div>
+  <div class="grid grid-cols-2 lg:grid-cols-2 gap-5">
+    <!-- 万象棋官方 -->
+    <div class="glass p-5">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="w-3 h-3 rounded-full" style="background: var(--color-a)"></span>
+        <span class="font-semibold" style="color: var(--color-a)">王者万象棋</span>
+        <span id="app-stats-wzq-tags" class="text-xs text-slate-500 ml-auto"></span>
+      </div>
+      <div class="grid grid-cols-4 gap-3 text-center text-sm">
+        <div>
+          <div id="app-wzq-rating" class="text-2xl font-bold text-slate-200">--</div>
+          <div class="text-[10px] text-slate-500 mt-1">TapTap 总分</div>
+        </div>
+        <div>
+          <div id="app-wzq-rating-count" class="text-2xl font-bold text-slate-200">--</div>
+          <div class="text-[10px] text-slate-500 mt-1">评分人数</div>
+        </div>
+        <div>
+          <div id="app-wzq-follow" class="text-2xl font-bold text-slate-200">--</div>
+          <div class="text-[10px] text-slate-500 mt-1">关注数</div>
+        </div>
+        <div>
+          <div id="app-wzq-download" class="text-2xl font-bold text-slate-200">--</div>
+          <div class="text-[10px] text-slate-500 mt-1">下载量</div>
+        </div>
+      </div>
+      <!-- 抽样 vs 官方对比条 -->
+      <div class="mt-4 pt-3 border-t border-slate-700/50">
+        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 我们抽样分</div>
+        <div class="flex gap-2 text-xs">
+          <span id="app-wzq-compare" class="text-slate-400"></span>
+        </div>
+      </div>
+    </div>
+    <!-- 金铲铲官方 -->
+    <div class="glass p-5">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="w-3 h-3 rounded-full" style="background: var(--color-b)"></span>
+        <span class="font-semibold" style="color: var(--color-b)">金铲铲之战</span>
+        <span id="app-stats-jcc-tags" class="text-xs text-slate-500 ml-auto"></span>
+      </div>
+      <div class="grid grid-cols-4 gap-3 text-center text-sm">
+        <div>
+          <div id="app-jcc-rating" class="text-2xl font-bold text-slate-200">--</div>
+          <div class="text-[10px] text-slate-500 mt-1">TapTap 总分</div>
+        </div>
+        <div>
+          <div id="app-jcc-rating-count" class="text-2xl font-bold text-slate-200">--</div>
+          <div class="text-[10px] text-slate-500 mt-1">评分人数</div>
+        </div>
+        <div>
+          <div id="app-jcc-follow" class="text-2xl font-bold text-slate-200">--</div>
+          <div class="text-[10px] text-slate-500 mt-1">关注数</div>
+        </div>
+        <div>
+          <div id="app-jcc-download" class="text-2xl font-bold text-slate-200">--</div>
+          <div class="text-[10px] text-slate-500 mt-1">下载量</div>
+        </div>
+      </div>
+      <div class="mt-4 pt-3 border-t border-slate-700/50">
+        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 我们抽样分</div>
+        <div class="flex gap-2 text-xs">
+          <span id="app-jcc-compare" class="text-slate-400"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 🆕 分析维度设置按钮 & 抽屉 ==================== -->
+<button onclick="toggleSettings()" 
+  class="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-2xl hover:scale-110 transition"
+  style="background: var(--color-a); color: #fff">⚙️</button>
+
+<div id="settings-panel" 
+  class="fixed top-0 right-0 h-full w-80 z-40 overflow-y-auto transform transition-transform duration-300"
+  style="background: var(--bg-surface); color: var(--chart-text-bold); transform: translateX(100%); box-shadow: -4px 0 20px rgba(0,0,0,0.5)">
+  <div class="p-5 border-b" style="border-color: var(--chart-axis)">
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-bold">⚙️ 分析维度设置</h3>
+      <button onclick="toggleSettings()" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <p class="text-xs text-slate-400 mt-1">配置会自动保存到浏览器</p>
+  </div>
+
+  <div class="p-5 space-y-6">
+    <!-- 图表开关 -->
+    <div>
+      <h4 class="text-sm font-semibold mb-3" style="color: var(--color-accent)">📊 图表显隐</h4>
+      <div class="space-y-2">
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-rating" checked class="accent-slate-500" onchange="applySettings()"> 评分分布对比
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-playtime" checked class="accent-slate-500" onchange="applySettings()"> 玩家时长 vs 评分
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-trend" checked class="accent-slate-500" onchange="applySettings()"> 评论时间趋势
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-wordcloud" checked class="accent-slate-500" onchange="applySettings()"> 热门词云
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-negcloud" checked class="accent-slate-500" onchange="applySettings()"> 差评词云
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-reviews" checked class="accent-slate-500" onchange="applySettings()"> 热门评论墙
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-persona" checked class="accent-slate-500" onchange="applySettings()"> 玩家画像
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-lifecycle" checked class="accent-slate-500" onchange="applySettings()"> 生命周期定位
+        </label>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="opt-stats" checked class="accent-slate-500" onchange="applySettings()"> TapTap 官方数据
+        </label>
+      </div>
+    </div>
+
+    <!-- 词云数量 -->
+    <div>
+      <h4 class="text-sm font-semibold mb-3" style="color: var(--color-accent)">☁️ 词云数量</h4>
+      <label class="text-sm text-slate-400 block mb-1">Top N 词</label>
+      <select id="opt-wordcount" onchange="applySettings()" 
+        class="w-full p-2 rounded text-sm" style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+        <option value="50">Top 50（简洁）</option>
+        <option value="80">Top 80</option>
+        <option value="100" selected>Top 100（标准）</option>
+        <option value="150">Top 150（丰富）</option>
+      </select>
+    </div>
+
+    <!-- 热门评论 Top N -->
+    <div>
+      <h4 class="text-sm font-semibold mb-3" style="color: var(--color-accent)">🔥 热门评论</h4>
+      <label class="text-sm text-slate-400 block mb-1">显示 Top N</label>
+      <select id="opt-topn" onchange="applySettings()"
+        class="w-full p-2 rounded text-sm" style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+        <option value="5" selected>Top 5</option>
+        <option value="10">Top 10</option>
+        <option value="15">Top 15</option>
+      </select>
+    </div>
+
+    <!-- 标签过滤 -->
+    <div>
+      <h4 class="text-sm font-semibold mb-3" style="color: var(--color-accent)">🏷️ 用户标签过滤</h4>
+      <p class="text-xs text-slate-400 mb-2">图表显示哪些标签（取消勾选可隐藏）</p>
+      <div id="opt-tags" class="space-y-1.5"></div>
+    </div>
+
+    <!-- 重置按钮 -->
+    <div class="pt-4 border-t" style="border-color: var(--chart-axis)">
+      <button onclick="resetSettings()"
+        class="w-full py-2 rounded text-sm font-medium hover:opacity-80 transition"
+        style="background: var(--color-negative); color: #fff">↺ 恢复默认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 遮罩（点击关闭设置面板）-->
+<div id="settings-overlay" onclick="toggleSettings()" 
+  class="fixed inset-0 z-30 hidden" style="background: rgba(0,0,0,0.5)"></div>
+
+<!-- ==================== 模块 2: 评分分布 ==================== -->
+<section id="section-rating" class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-5">评分分布对比（1-5 星）</h2>
+  <div id="chart-rating-dist" class="chart-box"></div>
+</section>
+
+<!-- ==================== 模块 3: 玩过时长 vs 评分 ==================== -->
+<section id="section-playtime" class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-2">玩家时长 vs 平均评分</h2>
+  <p class="text-slate-500 text-sm mb-5 pl-[18px]">新玩家 vs 老玩家口碑对比，看哪款游戏越玩越上瘾</p>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div id="chart-playtime-wzq" class="chart-box-sm"></div>
+    <div id="chart-playtime-jcc" class="chart-box-sm"></div>
+  </div>
+</section>
+
+<!-- ==================== 模块 4: 时间趋势 ==================== -->
+<section id="section-trend" class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-5">评论时间趋势</h2>
+  <div id="chart-trend" class="chart-box"></div>
+</section>
+
+<!-- ==================== 模块 5: 高频词云 ==================== -->
+<section id="section-wordcloud" class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-2">用户高频词云</h2>
+  <p class="text-slate-500 text-sm mb-5 pl-[18px]">基于全部评论 jieba 分词，反映用户讨论焦点</p>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="relative">
+      <div class="text-center font-medium mb-2 flex items-center justify-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-wzq shadow-[0_0_8px_var(--color-a-glow)]"></span>
+        <span class="text-wzq">王者万象棋</span>
+      </div>
+      <div id="wordcloud-wzq" class="wordcloud-box"></div>
+    </div>
+    <div class="relative">
+      <div class="text-center font-medium mb-2 flex items-center justify-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-jcc shadow-[0_0_8px_var(--color-b-glow)]"></span>
+        <span class="text-jcc">金铲铲之战</span>
+      </div>
+      <div id="wordcloud-jcc" class="wordcloud-box"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 模块 6: 负面词云 ==================== -->
+<section id="section-negcloud" class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-2">⚠️ 差评关键词（评分 ≤ 2）</h2>
+  <p class="text-slate-500 text-sm mb-5 pl-[18px]">深入挖掘打低分的用户到底在抱怨什么</p>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+      <div class="text-center text-wzq font-medium mb-2">万象棋 · 负面词</div>
+      <div id="negcloud-wzq" class="wordcloud-box"></div>
+    </div>
+    <div>
+      <div class="text-center text-jcc font-medium mb-2">金铲铲 · 负面词</div>
+      <div id="negcloud-jcc" class="wordcloud-box"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 模块 7: 热门评论 ==================== -->
+<section id="section-reviews" class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-5">🔥 点赞最多的评论 <span id="reviews-top-n-label" class="text-slate-400 text-base"></span></h2>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+      <div class="text-wzq font-medium mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-wzq shadow-[0_0_8px_var(--color-a-glow)]"></span> 王者万象棋
+      </div>
+      <div id="reviews-wzq" class="space-y-3"></div>
+    </div>
+    <div>
+      <div class="text-jcc font-medium mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-jcc shadow-[0_0_8px_var(--color-b-glow)]"></span> 金铲铲之战
+      </div>
+      <div id="reviews-jcc" class="space-y-3"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 模块 8: 机制对比表 ==================== -->
+<section class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-5">📊 竞品机制对比表</h2>
+  <div class="overflow-x-auto">
+    <table id="compare-table" class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="border-b border-slate-600/50">
+          <th class="text-left py-3 px-4 text-slate-300 font-semibold">对比维度</th>
+          <th class="text-left py-3 px-4 text-wzq font-semibold">王者万象棋</th>
+          <th class="text-left py-3 px-4 text-jcc font-semibold">金铲铲之战</th>
+        </tr>
+      </thead>
+      <tbody id="compare-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ==================== 模块 9: 生命周期定位 ==================== -->
+<section id="section-lifecycle" class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-2">⏳ 生命周期定位</h2>
+  <p class="text-slate-500 text-sm mb-5 pl-[18px]">
+    ℹ️ 两款游戏处于不同生命周期阶段，直接对比存在天然差异。本文档更关注「各阶段核心痛点」而非优劣评判。
+  </p>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div id="lifecycle-wzq" class="p-5 rounded-xl border border-slate-700/50 bg-slate-800/30 transition-all duration-300 hover:border-wzq/40 hover:bg-wzq/5"></div>
+    <div id="lifecycle-jcc" class="p-5 rounded-xl border border-slate-700/50 bg-slate-800/30 transition-all duration-300 hover:border-jcc/40 hover:bg-jcc/5"></div>
+  </div>
+  <div id="chart-lifecycle" class="chart-box-sm"></div>
+</section>
+
+<!-- ==================== 模块 10: 玩家画像 ==================== -->
+<section id="section-persona" class="glass p-7 mb-8 reveal">
+  <h2 class="section-title text-xl font-semibold mb-2">👤 首发玩家画像（按玩过阶段分桶）</h2>
+  <p class="text-slate-500 text-sm mb-5 pl-[18px]">
+    万象棋刚上线 10 天，传统 demographic 画像无效。改用「玩过阶段 + 文本反推标签」方法生成首发玩家画像。
+  </p>
+
+  <!-- Tab 切换 -->
+  <div class="flex gap-3 mb-6">
+    <button onclick="showPersona('wzq')" id="tab-wzq"
+      class="tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-wzq/15 border border-wzq/30 text-wzq">
+      ⚔️ 王者万象棋
+    </button>
+    <button onclick="showPersona('jcc')" id="tab-jcc"
+      class="tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-slate-700/30 border border-slate-600/40 text-slate-300 hover:text-jcc">
+      🔮 金铲铲之战
+    </button>
+  </div>
+
+  <!-- 阶段分组统计 -->
+  <div id="persona-stage" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div id="chart-stage-score" class="chart-box-sm"></div>
+    <div id="chart-stage-count" class="chart-box-sm"></div>
+  </div>
+
+  <!-- 标签分布 -->
+  <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+      <h3 class="text-slate-300 text-sm font-medium mb-3">🏷️ 用户标签分布（规则反推）</h3>
+      <div id="chart-tag" class="chart-box-sm"></div>
+    </div>
+    <div>
+      <h3 class="text-slate-300 text-sm font-medium mb-3">📝 各阶段高频词 Top 15</h3>
+      <div id="stage-words" class="max-h-[280px] overflow-y-auto space-y-3 pr-2"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 📋 研究结论 & AI 报告 ==================== -->
+<section class="glass p-7 reveal">
+  <div class="flex items-center justify-between mb-5 gap-4 flex-wrap">
+    <h2 class="section-title text-xl font-semibold">📋 研究结论 & 行动建议</h2>
+    <div class="flex items-center gap-2">
+      <!-- API Key 设置 -->
+      <details class="relative">
+        <summary class="cursor-pointer px-3 py-1.5 rounded-lg text-xs border hover:opacity-80 transition list-none flex items-center gap-1"
+          style="border-color: var(--chart-axis); color: var(--chart-text-bold)">
+          🔑 API Key
+        </summary>
+        <div class="absolute right-0 top-full mt-2 w-80 p-4 rounded-lg z-50"
+          style="background: var(--bg-surface); border: 1px solid var(--chart-axis); box-shadow: 0 10px 30px rgba(0,0,0,0.3)">
+          <div class="text-xs font-medium mb-2" style="color: var(--chart-text-bold)">大模型 API 配置</div>
+          <div class="text-[11px] text-slate-400 mb-2">支持豆包/火山引擎、OpenAI、通义千问等兼容 OpenAI 协议的 API</div>
+          <select id="llm-provider" onchange="onLLMProviderChange()" class="w-full mb-2 px-2 py-1.5 rounded text-xs outline-none"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+            <option value="deepseek" selected>DeepSeek（推荐）</option>
+            <option value="doubao">豆包（火山引擎）</option>
+            <option value="openai">OpenAI / 兼容</option>
+            <option value="qwen">通义千问</option>
+            <option value="custom">自定义</option>
+          </select>
+          <input id="llm-endpoint" type="text" placeholder="API Endpoint URL" class="w-full mb-2 px-2 py-1.5 rounded text-xs outline-none"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+          <input id="llm-model" type="text" placeholder="Model ID（DeepSeek 填 deepseek-flash）" class="w-full mb-2 px-2 py-1.5 rounded text-xs outline-none"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+          <input id="llm-apikey" type="password" placeholder="API Key" class="w-full mb-2 px-2 py-1.5 rounded text-xs outline-none"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+          <button onclick="saveLLMConfig()" class="w-full py-1.5 rounded text-xs font-medium hover:opacity-90"
+            style="background: var(--color-accent); color: #fff">💾 保存到浏览器</button>
+          <div class="text-[10px] text-slate-500 mt-2">⚠️ API Key 仅存于 localStorage，不会上传任何服务器</div>
+        </div>
+      </details>
+
+      <!-- 提示词设置 -->
+      <details class="relative">
+        <summary class="cursor-pointer px-3 py-1.5 rounded-lg text-xs border hover:opacity-80 transition list-none flex items-center gap-1"
+          style="border-color: var(--chart-axis); color: var(--chart-text-bold)">
+          📝 提示词
+        </summary>
+        <div class="absolute right-0 top-full mt-2 w-[520px] p-4 rounded-lg z-50 max-h-[85vh] overflow-y-auto"
+          style="background: var(--bg-surface); border: 1px solid var(--chart-axis); box-shadow: 0 10px 30px rgba(0,0,0,0.3)">
+
+          <!-- 📚 模板选择 -->
+          <div class="flex items-center gap-2 mb-3 pb-3" style="border-bottom: 1px dashed var(--chart-axis)">
+            <span class="text-xs font-medium" style="color: var(--chart-text-bold)">📚 模板</span>
+            <select id="prompt-template" onchange="applyPromptTemplate(this.value)"
+              class="flex-1 px-2 py-1.5 rounded text-xs outline-none"
+              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+              <option value="">—— 选择一个预设模板快速填充 ——</option>
+              <option value="default">🎯 默认模板（4章完整报告）</option>
+              <option value="brief">📝 简要版（300字精简）</option>
+              <option value="strategy">🏆 策略版（深挖可落地动作）</option>
+              <option value="painpoint">⚠️ 痛点版（聚焦差评根因）</option>
+            </select>
+          </div>
+
+          <div class="text-xs font-medium mb-1" style="color: var(--chart-text-bold)">System Prompt</div>
+          <textarea id="prompt-system" rows="3" class="w-full mb-3 px-2 py-1.5 rounded text-xs outline-none resize-y"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></textarea>
+
+          <div class="text-xs font-medium mb-1 flex items-center gap-2" style="color: var(--chart-text-bold)">
+            User Prompt 模板
+            <span class="text-[10px] font-normal text-slate-500">
+              占位符：<code>${'{context}'}</code>=评论数据，<code>${'{total_docs}'}</code>=评论数
+            </span>
+          </div>
+          <textarea id="prompt-user" rows="12" class="w-full mb-3 px-2 py-1.5 rounded text-xs outline-none resize-y font-mono leading-relaxed"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></textarea>
+
+          <div class="flex gap-2">
+            <button onclick="savePromptConfig()" class="flex-1 py-1.5 rounded text-xs font-medium hover:opacity-90"
+              style="background: var(--color-accent); color: #fff">💾 保存当前</button>
+            <button onclick="resetPromptConfig()" class="flex-1 py-1.5 rounded text-xs font-medium hover:opacity-80"
+              style="border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">↺ 重置默认</button>
+          </div>
+        </div>
+      </details>
+      <!-- AI 生成按钮 -->
+      <button id="btn-ai-report" onclick="generateAIReport()"
+        class="px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 transition inline-flex items-center gap-1"
+        style="background: var(--color-accent); color: #fff">
+        🤖 AI 生成报告
+      </button>
+    </div>
+  </div>
+
+  <!-- 📊 规则化结论（无 LLM 也能看） -->
+  <div id="insights-cards" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-6"></div>
+
+  <!-- 🎯 行动建议 -->
+  <div id="recommendations-cards" class="space-y-3 mb-6"></div>
+
+  <!-- 🤖 AI 生成的自然语言报告 -->
+  <div id="ai-report" class="hidden">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-lg">🤖</span>
+      <span class="text-sm font-semibold" style="color: var(--color-accent)">AI 综合分析报告</span>
+      <span id="ai-report-status" class="text-xs text-slate-500"></span>
+    </div>
+    <div id="ai-report-content" class="p-5 rounded-lg text-sm leading-relaxed whitespace-pre-wrap"
+      style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></div>
+  </div>
+</section>
+
+</main>
+
+<footer class="text-center text-slate-600 text-xs pb-10 relative z-10">
+  <div class="hero-divider w-32 mx-auto mb-6"></div>
+  竞品分析可视化 · ECharts + Tailwind · 基于 TapTap 真实评论数据
+</footer>
+
+<!-- ==================== JS: 数据加载 + 渲染 ==================== -->
+<script>
+const GAME_A = "王者万象棋";
+const GAME_B = "金铲铲之战";
+
+// 🎨 所有颜色从 theme.js 的 THEME 对象读，不再硬编码
+const COLOR_A = THEME.color_a;
+const COLOR_B = THEME.color_b;
+const COLOR_NEG = THEME.negative;
+const COLOR_POS = THEME.positive;
+
+// 渐变色用 rgba 版本
+const RGBA_A = getComputedStyle(document.documentElement).getPropertyValue('--color-a-soft').trim() || 'rgba(245,158,11,0.25)';
+const RGBA_B = getComputedStyle(document.documentElement).getPropertyValue('--color-b-soft').trim() || 'rgba(56,189,248,0.25)';
+
+// 🖼️ ECharts 暗色主题常量
+const AXIS_COLOR = THEME_BG.chart_axis;
+const GRID_COLOR = THEME_BG.chart_grid;
+const TEXT_COLOR = THEME_BG.chart_text;
+const TEXT_BOLD = THEME_BG.chart_text_bold;
+const CONTRAST_COLOR = THEME_BG.chart_contrast;
+
+let DATA = null;
+let VERSIONS = null;  // 版本清单
+
+// ============================================================
+// 🆕 知识库版本管理（下拉框切换 + FileReader 上传）
+// ============================================================
+
+async function loadVersionList() {
+  // 1. 先尝试加载 versions.json
+  try {
+    const resp = await fetch("versions.json?t=" + Date.now());
+    if (resp.ok) {
+      VERSIONS = await resp.json();
+    }
+  } catch (e) {
+    console.warn("versions.json 不存在（首次运行？），跳过版本列表");
+  }
+
+  // 2. 填充下拉框
+  const sel = document.getElementById("version-select");
+  if (VERSIONS && VERSIONS.available && VERSIONS.available.length > 0) {
+    sel.innerHTML = VERSIONS.available.map(v =>
+      `<option value="${v.id}" ${v.id === VERSIONS.current ? "selected" : ""}>${v.label}</option>`
+    ).join("");
+    document.getElementById("version-info").textContent = 
+      `当前: ${VERSIONS.current} · 共 ${VERSIONS.available.length} 个版本`;
+  } else {
+    // 没有 versions.json，给个 fallback 选项
+    sel.innerHTML = `<option value="">analysis.json（默认）</option>`;
+    document.getElementById("version-info").textContent = "（run prepare_data.py 生成多版本后可切换）";
+  }
+}
+
+async function switchDashboardVersion(versionId) {
+  if (!versionId) return;
+  // 读 localStorage 的偏好
+  localStorage.setItem("taptap_dashboard_version", versionId);
+  
+  try {
+    const resp = await fetch(`analyses/analysis_${versionId}.json?t=${Date.now()}`);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const data = await resp.json();
+    applyNewData(data, `📂 已切换到版本 ${versionId}`);
+  } catch (err) {
+    alert("❌ 加载版本失败: " + err.message + "\n（可能需要先跑 prepare_data.py 生成这个版本）");
+  }
+}
+
+function uploadJsonVersion(fileInput) {
+  const file = fileInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.bm25 || !data.overview) {
+        throw new Error("缺少 bm25 / overview 字段，不是有效的 analysis.json");
+      }
+      const vid = data.version_id || file.name.replace(/\.json$/, "") || "uploaded";
+      applyNewData(data, `📤 已上传 ${file.name}（${vid}）`);
+      // 加到下拉框里（仅本次会话）
+      const sel = document.getElementById("version-select");
+      const opt = document.createElement("option");
+      opt.value = vid;
+      opt.textContent = `${vid} · 本地上传`;
+      opt.selected = true;
+      sel.appendChild(opt);
+    } catch (err) {
+      alert("❌ JSON 解析失败: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+  fileInput.value = "";  // 清空，让同一个文件可以再选一次
+}
+
+function refreshVersions() {
+  loadVersionList().then(() => {
+    const sel = document.getElementById("version-select");
+    if (VERSIONS && VERSIONS.current) {
+      sel.value = VERSIONS.current;
+      switchDashboardVersion(VERSIONS.current);
+    }
+  });
+}
+
+function applyNewData(data, toastMsg) {
+  DATA = data;
+  console.log("✅ 数据已更新", Object.keys(data));
+  renderAll();
+  // 顶部小 toast 提示
+  showToast(toastMsg);
+}
+
+function showToast(msg) {
+  const el = document.createElement("div");
+  el.textContent = msg;
+  Object.assign(el.style, {
+    position: "fixed", top: "20px", right: "20px",
+    background: "var(--color-accent)", color: "#fff",
+    padding: "10px 16px", borderRadius: "8px",
+    fontSize: "13px", zIndex: "9999",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+    transition: "opacity 0.3s",
+  });
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 300); }, 2000);
+}
+
+// ---- 启动：加载版本列表 + 默认数据 + LLM 配置 ----
+(async function initDashboard() {
+  // 加载 LLM API 配置（填过的话自动填回表单）
+  loadLLMConfig();
+
+  // 加载版本下拉框
+  await loadVersionList();
+
+  // 决定加载哪个版本：localStorage > versions.current > analysis.json
+  let preferredVersion = localStorage.getItem("taptap_dashboard_version");
+  if (!preferredVersion && VERSIONS) {
+    preferredVersion = VERSIONS.current;
+  }
+
+  try {
+    let data;
+    if (preferredVersion) {
+      const resp = await fetch(`analyses/analysis_${preferredVersion}.json?t=${Date.now()}`);
+      if (resp.ok) {
+        data = await resp.json();
+      }
+    }
+    // fallback：根目录 analysis.json
+    if (!data) {
+      const resp = await fetch("analysis.json");
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      data = await resp.json();
+    }
+    DATA = data;
+    console.log("✅ 数据加载成功", Object.keys(data));
+    renderAll();
+  } catch (err) {
+    console.error("❌ 加载 analysis.json 失败:", err);
+    document.body.innerHTML +=
+      '<div class="text-center p-8 text-red-400">❌ 无法加载 analysis.json，请用 http 服务打开此页面（VS Code Live Server 或 python -m http.server）</div>';
+  }
+})();
+
+// ---- 数字动画 ----
+function animateNum(el, target, decimals = 0) {
+  const start = 0;
+  const dur = 1400;
+  const t0 = performance.now();
+  function tick(now) {
+    const p = Math.min((now - t0) / dur, 1);
+    const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+    el.textContent = (start + (target - start) * eased).toFixed(decimals);
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// ============================================================
+// 全部渲染
+// ============================================================
+function renderAll() {
+  renderKPI();
+  renderAppStats();         // 🆕 官方数据
+  renderRatingDist();
+  renderPlaytime(GAME_A, "chart-playtime-wzq", COLOR_A);
+  renderPlaytime(GAME_B, "chart-playtime-jcc", COLOR_B);
+  renderTrend();
+  renderWordcloud(GAME_A, "wordcloud-wzq", COLOR_A, "all");
+  renderWordcloud(GAME_B, "wordcloud-jcc", COLOR_B, "all");
+  renderWordcloud(GAME_A, "negcloud-wzq", COLOR_NEG, "negative");
+  renderWordcloud(GAME_B, "negcloud-jcc", COLOR_NEG, "negative");
+  renderTopReviews(GAME_A, "reviews-wzq");
+  renderTopReviews(GAME_B, "reviews-jcc");
+  renderCompareTable();
+  renderLifecycle();
+  showPersona("wzq");
+  renderFindings();
+  initSettings();           // 🆕 设置面板初始化
+  applySettings();          // 🆕 应用已保存的设置
+  initRevealObserver();
+}
+
+// ---- 1. KPI ----
+function renderKPI() {
+  const o = DATA.overview;
+  animateNum(document.getElementById("kpi-wzq-score"), o[GAME_A].avg_score, 2);
+  animateNum(document.getElementById("kpi-jcc-score"), o[GAME_B].avg_score, 2);
+  animateNum(document.getElementById("kpi-wzq-count"), o[GAME_A].review_count, 0);
+  animateNum(document.getElementById("kpi-jcc-count"), o[GAME_B].review_count, 0);
+  document.getElementById("kpi-wzq-5star").textContent = `5星占比 ${o[GAME_A]["5star_ratio"]}%`;
+  document.getElementById("kpi-jcc-5star").textContent = `5星占比 ${o[GAME_B]["5star_ratio"]}%`;
+  document.getElementById("kpi-wzq-hours").textContent = `平均游戏 ${o[GAME_A].avg_play_hours}h`;
+  document.getElementById("kpi-jcc-hours").textContent = `平均游戏 ${o[GAME_B].avg_play_hours}h`;
+}
+
+// ---- 2. 评分分布 ----
+function renderRatingDist() {
+  const d = DATA.rating_dist;
+  const categories = ["1星", "2星", "3星", "4星", "5星"];
+  const a = ["1","2","3","4","5"].map(k => d[GAME_A][k] || 0);
+  const b = ["1","2","3","4","5"].map(k => d[GAME_B][k] || 0);
+
+  echarts.init(document.getElementById("chart-rating-dist")).setOption({
+    tooltip: { trigger: "axis", backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
+    legend: { data: [GAME_A, GAME_B], textStyle: { color: TEXT_BOLD }, top: 0 },
+    grid: { top: 50, left: 50, right: 30, bottom: 40 },
+    xAxis: { type: "category", data: categories, axisLabel: { color: TEXT_COLOR }, axisLine: { lineStyle: { color: AXIS_COLOR } } },
+    yAxis: { type: "value", name: "评论数", nameTextStyle: { color: TEXT_COLOR }, axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
+    series: [
+      {
+        name: GAME_A, type: "bar", data: a, barGap: "10%",
+        itemStyle: {
+          color: { type: "linear", x:0, y:0, x2:0, y2:1, colorStops: [
+            { offset:0, color: COLOR_A }, { offset:1, color: RGBA_A }
+          ]},
+          borderRadius: [6, 6, 0, 0]
+        },
+        emphasis: { itemStyle: { shadowBlur: 20, shadowColor: RGBA_A } },
+        animationDuration: 1200, animationEasing: "cubicOut"
+      },
+      {
+        name: GAME_B, type: "bar", data: b,
+        itemStyle: {
+          color: { type: "linear", x:0, y:0, x2:0, y2:1, colorStops: [
+            { offset:0, color: COLOR_B }, { offset:1, color: RGBA_B }
+          ]},
+          borderRadius: [6, 6, 0, 0]
+        },
+        emphasis: { itemStyle: { shadowBlur: 20, shadowColor: RGBA_B } },
+        animationDuration: 1400, animationEasing: "cubicOut"
+      },
+    ]
+  });
+}
+
+// ---- 3. 玩家时长 vs 评分 ----
+function renderPlaytime(game, domId, color) {
+  const d = DATA.playtime_score[game];
+  const scores = d.avg_scores.map(v => (v === null || v === undefined) ? null : v);
+  let allBuckets = [...d.buckets];
+  let allScores = [...scores];
+  if (d.expect_score !== null) {
+    allBuckets.push("期待者");
+    allScores.push(d.expect_score);
+  }
+
+  echarts.init(document.getElementById(domId)).setOption({
+    title: { text: game, left: "center", textStyle: { color, fontSize: 15, fontWeight: 600 } },
+    tooltip: { trigger: "axis", backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
+    grid: { top: 45, left: 50, right: 30, bottom: 40 },
+    xAxis: { type: "category", data: allBuckets, axisLabel: { color: TEXT_COLOR }, axisLine: { lineStyle: { color: AXIS_COLOR } } },
+    yAxis: { type: "value", min: 0, max: 5, name: "平均分", nameTextStyle: { color: TEXT_COLOR }, axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
+    series: [{
+      type: "bar", data: allScores,
+      itemStyle: {
+        color: { type: "linear", x:0, y:0, x2:0, y2:1, colorStops: [
+          { offset:0, color }, { offset:1, color: color.replace(")", ", 0.2)").replace("rgb", "rgba") }
+        ]},
+        borderRadius: [6, 6, 0, 0]
+      },
+      label: { show: true, position: "top", color: TEXT_BOLD, fontSize: 11, fontWeight: 600 },
+      emphasis: { itemStyle: { shadowBlur: 15, shadowColor: color } },
+      animationDuration: 1000, animationEasing: "cubicOut"
+    }]
+  });
+}
+
+// ---- 4. 时间趋势 ----
+function renderTrend() {
+  const d = DATA.time_trend;
+  const datesA = d[GAME_A].dates;
+  const datesB = d[GAME_B].dates;
+  const allDates = [...new Set([...datesA, ...datesB])].sort();
+
+  function buildSeries(game) {
+    const map = {};
+    d[game].dates.forEach((dt, i) => map[dt] = d[game].counts[i]);
+    return allDates.map(dt => map[dt] || 0);
+  }
+
+  echarts.init(document.getElementById("chart-trend")).setOption({
+    tooltip: { trigger: "axis", backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
+    legend: { data: [GAME_A, GAME_B], textStyle: { color: TEXT_BOLD }, top: 0 },
+    grid: { top: 50, left: 50, right: 30, bottom: 60 },
+    xAxis: {
+      type: "category", data: allDates, boundaryGap: false,
+      axisLabel: { color: TEXT_COLOR, rotate: 30, fontSize: 10 },
+      axisLine: { lineStyle: { color: AXIS_COLOR } }
+    },
+    yAxis: { type: "value", name: "评论数", nameTextStyle: { color: TEXT_COLOR }, axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
+    series: [
+      {
+        name: GAME_A, type: "line", smooth: true, data: buildSeries(GAME_A),
+        itemStyle: { color: COLOR_A },
+        lineStyle: { width: 3 },
+        symbol: "circle", symbolSize: 6,
+        areaStyle: { color: { type: "linear", x:0,y:0,x2:0,y2:1, colorStops:[
+          {offset:0, color: RGBA_A}, {offset:1, color: "rgba(0,0,0,0)"}
+        ]}},
+        animationDuration: 1800, animationEasing: "cubicOut"
+      },
+      {
+        name: GAME_B, type: "line", smooth: true, data: buildSeries(GAME_B),
+        itemStyle: { color: COLOR_B },
+        lineStyle: { width: 3 },
+        symbol: "circle", symbolSize: 6,
+        areaStyle: { color: { type: "linear", x:0,y:0,x2:0,y2:1, colorStops:[
+          {offset:0, color: RGBA_B}, {offset:1, color: "rgba(0,0,0,0)"}
+        ]}},
+        animationDuration: 2000, animationEasing: "cubicOut"
+      },
+    ]
+  });
+}
+
+// ---- 5 & 6. 词云 ----
+function renderWordcloud(game, domId, color, which, topN) {
+  const words0 = DATA.word_freq[game][which] || [];
+  const words = topN ? words0.slice(0, topN) : words0;
+  if (words.length === 0) return;
+
+  echarts.init(document.getElementById(domId)).setOption({
+    tooltip: { show: true, formatter: p => `${p.name}: ${p.value}`, backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
+    series: [{
+      type: "wordCloud",
+      shape: "circle",
+      gridSize: 8,
+      sizeRange: [14, 60],
+      rotationRange: [-30, 30],
+      drawOutOfBound: false,
+      textStyle: {
+        fontFamily: "PingFang SC, Microsoft YaHei",
+        fontWeight: "bold",
+        color: function () {
+          if (which === "negative") {
+            const arr = THEME.palette_negative;
+            return arr[Math.floor(Math.random() * arr.length)];
+          } else {
+            const arr = THEME.palette_positive;
+            return arr[Math.floor(Math.random() * arr.length)];
+          }
+        }
+      },
+      emphasis: { textStyle: { textShadowBlur: 10, textShadowColor: color } },
+      data: words
+    }]
+  });
+}
+
+// ---- 7. 热门评论 ----
+function renderTopReviews(game, containerId, topN) {
+  const n = topN || 5;
+  // 更新标题里的 Top N
+  const label = document.getElementById("reviews-top-n-label");
+  if (label && game === GAME_A) label.textContent = `Top ${n}`;
+  const reviews = DATA.top_reviews[game] || [];
+  const container = document.getElementById(containerId);
+  container.innerHTML = reviews.slice(0, n).map(r => `
+    <div class="review-card p-4">
+      <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-amber-400">${"⭐".repeat(r.score)}</span>
+          <span class="text-slate-500">@${r.nickname}</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span>🕐 ${r.time.slice(0, 10)}</span>
+          <span>⏱️ ${r.play_hours}</span>
+          <span class="text-rose-400">👍 ${r.ups}</span>
+        </div>
+      </div>
+      <div class="text-slate-200 text-sm leading-relaxed">${r.content.replace(/\n/g, ' ')}</div>
+    </div>
+  `).join("");
+}
+
+// ---- 8. 竞品对比表 ----
+function renderCompareTable() {
+  const d = DATA.mechanic_compare;
+  const tbody = document.getElementById("compare-tbody");
+  tbody.innerHTML = d.rows.map((row, i) => `
+    <tr class="compare-row border-b border-slate-700/40 ${i % 2 === 0 ? 'bg-slate-800/15' : ''}">
+      <td class="py-3 px-4 text-slate-300 font-medium">${row[0]}</td>
+      <td class="py-3 px-4 text-slate-200">${row[1]}</td>
+      <td class="py-3 px-4 text-slate-200">${row[2]}</td>
+    </tr>
+  `).join("");
+}
+
+// ---- 模块 9: 生命周期定位 ----
+function renderLifecycle() {
+  const pA = DATA.player_persona[GAME_A];
+  const pB = DATA.player_persona[GAME_B];
+
+  document.getElementById("lifecycle-wzq").innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-wzq font-bold text-lg">王者万象棋</span>
+      <span class="text-xs px-3 py-1 rounded-full bg-wzq/15 border border-wzq/30 text-wzq font-medium">${pA.lifecycle.stage}</span>
+    </div>
+    <div class="text-xs text-slate-500 mb-2">
+      上线日期 ${pA.lifecycle.launch_date} · 距今天数 <span class="text-wzq font-bold">${pA.lifecycle.days_since_launch} 天</span>
+    </div>
+    <div class="text-sm text-slate-300 leading-relaxed">${pA.lifecycle.summary}</div>
+  `;
+  document.getElementById("lifecycle-jcc").innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-jcc font-bold text-lg">金铲铲之战</span>
+      <span class="text-xs px-3 py-1 rounded-full bg-jcc/15 border border-jcc/30 text-jcc font-medium">${pB.lifecycle.stage}</span>
+    </div>
+    <div class="text-xs text-slate-500 mb-2">
+      上线日期 ${pB.lifecycle.launch_date} · 距今天数 <span class="text-jcc font-bold">${pB.lifecycle.days_since_launch} 天</span>
+    </div>
+    <div class="text-sm text-slate-300 leading-relaxed">${pB.lifecycle.summary}</div>
+  `;
+
+  echarts.init(document.getElementById("chart-lifecycle")).setOption({
+    title: { text: "生命周期对比（对数刻度）", left: "center", textStyle: { color: TEXT_BOLD, fontSize: 14, fontWeight: 600 } },
+    tooltip: { trigger: "axis", formatter: p => `${p[0].name}: 上线 ${p[0].value} 天`, backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
+    grid: { top: 45, left: 120, right: 40, bottom: 30 },
+    xAxis: { type: "log", name: "上线天数（log 刻度）", nameTextStyle: { color: TEXT_COLOR }, axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
+    yAxis: { type: "category", data: [GAME_A, GAME_B], axisLabel: { color: TEXT_BOLD }, axisLine: { lineStyle: { color: AXIS_COLOR } } },
+    series: [{
+      type: "bar",
+      data: [
+        { value: pA.lifecycle.days_since_launch, itemStyle: {
+          color: { type: "linear", x:0,y:0,x2:1,y2:0, colorStops: [{ offset:0, color: RGBA_A }, { offset:1, color: COLOR_A }]},
+          borderRadius: [0, 6, 6, 0]
+        }},
+        { value: pB.lifecycle.days_since_launch, itemStyle: {
+          color: { type: "linear", x:0,y:0,x2:1,y2:0, colorStops: [{ offset:0, color: RGBA_B }, { offset:1, color: COLOR_B }]},
+          borderRadius: [0, 6, 6, 0]
+        }},
+      ],
+      barWidth: 28,
+      label: { show: true, position: "right", color: TEXT_BOLD, fontWeight: 600, formatter: p => p.value + " 天" },
+      animationDuration: 1500, animationEasing: "cubicOut"
+    }]
+  });
+}
+
+// ---- 模块 10: 玩家画像（Tab 切换） ----
+let currentPersonaGame = GAME_A;
+
+function showPersona(which) {
+  currentPersonaGame = which === "wzq" ? GAME_A : GAME_B;
+  const color = which === "wzq" ? COLOR_A : COLOR_B;
+
+  document.getElementById("tab-wzq").className = which === "wzq"
+    ? "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-wzq/15 border border-wzq/30 text-wzq"
+    : "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-slate-700/30 border border-slate-600/40 text-slate-300 hover:text-wzq";
+  document.getElementById("tab-jcc").className = which === "jcc"
+    ? "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-jcc/15 border border-jcc/30 text-jcc"
+    : "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-slate-700/30 border border-slate-600/40 text-slate-300 hover:text-jcc";
+
+  const persona = DATA.player_persona[currentPersonaGame];
+  const stages = persona.stage_stats;
+
+  // —— 阶段 vs 平均分（柱状图）——
+  echarts.init(document.getElementById("chart-stage-score")).setOption({
+    title: { text: "各阶段玩家平均评分", left: "center", textStyle: { color, fontSize: 14, fontWeight: 600 } },
+    tooltip: { trigger: "axis", backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
+    grid: { top: 50, left: 50, right: 30, bottom: 50 },
+    xAxis: { type: "category", data: stages.map(s => s.stage), axisLabel: { color: TEXT_COLOR, fontSize: 10, rotate: 15 }, axisLine: { lineStyle: { color: AXIS_COLOR } } },
+    yAxis: { type: "value", min: 0, max: 5, name: "平均分", axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
+    series: [{
+      type: "bar", data: stages.map(s => s.avg_score),
+      itemStyle: { color, borderRadius: [6, 6, 0, 0] },
+      label: { show: true, position: "top", color: TEXT_BOLD, fontSize: 11, fontWeight: 600 },
+      animationDuration: 1000
+    }]
+  }, true);
+
+  // —— 阶段人数占比（饼图）——
+  echarts.init(document.getElementById("chart-stage-count")).setOption({
+    title: { text: "各阶段玩家占比", left: "center", textStyle: { color, fontSize: 14, fontWeight: 600 } },
+    tooltip: { trigger: "item", formatter: p => `${p.name}: ${p.value} 条评论 (${p.percent}%)`, backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
+    legend: { bottom: 0, textStyle: { color: TEXT_BOLD, fontSize: 11 } },
+    series: [{
+      type: "pie",
+      radius: ["38%", "68%"],
+      center: ["50%", "45%"],
+      data: stages.map(s => ({ name: s.stage, value: s.count })),
+      itemStyle: { borderColor: CONTRAST_COLOR, borderWidth: 2 },
+      label: { color: TEXT_BOLD, fontSize: 10 },
+      animationDuration: 1200
+    }]
+  }, true);
+
+  // —— 标签分布（横向柱状图，top 10，过滤 hiddenTags）——
+  const allTags = persona.tag_distribution || [];
+  const hidden = CURRENT_SETTINGS.hiddenTags || [];
+  const tags = allTags.filter(t => !hidden.includes(t.name)).slice(0, 10);
+  echarts.init(document.getElementById("chart-tag")).setOption({
+    tooltip: { trigger: "axis", backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
+    grid: { top: 10, left: 100, right: 40, bottom: 20 },
+    xAxis: { type: "value", axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
+    yAxis: { type: "category", data: tags.map(t => t.name).reverse(), axisLabel: { color: TEXT_BOLD, fontSize: 11 }, axisLine: { lineStyle: { color: AXIS_COLOR } } },
+    series: [{
+      type: "bar", data: tags.map(t => t.value).reverse(),
+      itemStyle: { color, borderRadius: [0, 6, 6, 0] },
+      label: { show: true, position: "right", color: TEXT_BOLD, fontSize: 10, fontWeight: 600, formatter: p => p.value },
+      animationDuration: 1000
+    }]
+  }, true);
+
+  // —— 各阶段高频词（标签卡片）——
+  document.getElementById("stage-words").innerHTML = stages.map(s => `
+    <div class="p-4 rounded-xl border border-slate-700/40 bg-slate-800/25">
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-semibold text-sm" style="color:${color}">${s.stage}</span>
+        <span class="text-xs text-slate-500">${s.count} 条 · 平均 ${s.avg_score} 分</span>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        ${s.top_words.slice(0, 10).map(w => `<span class="tag-item text-xs px-2.5 py-1 rounded text-slate-300">${w.name}</span>`).join("")}
+      </div>
+    </div>
+  `).join("");
+}
+
+// ============================================================
+// 📋 研究结论 & AI 报告（规则化 + LLM 双轨）
+// ============================================================
+
+const SEVERITY_MAP = {
+  high:    { color: "#EF4444", bg: "rgba(239,68,68,0.08)",  label: "🔴 高" },
+  warning: { color: "#F59E0B", bg: "rgba(245,158,11,0.08)", label: "🟡 中" },
+  medium:  { color: "#6366F1", bg: "rgba(99,102,241,0.08)", label: "🟣 中" },
+  info:    { color: "#3B82F6", bg: "rgba(59,130,246,0.08)", label: "🔵 信息" },
+};
+
+function renderFindings() { renderInsights(); renderRecommendations(); }
+
+function renderInsights() {
+  const container = document.getElementById("insights-cards");
+  if (!container) return;
+
+  const insights = DATA.insights || [];
+  if (!insights.length) {
+    container.innerHTML = `<div class="text-slate-500 text-sm">（暂无结论，请先跑 python analysis/prepare_data.py 生成）</div>`;
+    return;
+  }
+
+  container.innerHTML = insights.map(item => {
+    const sev = SEVERITY_MAP[item.severity] || SEVERITY_MAP.info;
+    const metrics_html = (item.evidence?.metrics || []).map(m =>
+      `<div class="flex justify-between text-[11px]"><span class="text-slate-400">${m.k}</span><span class="font-semibold" style="color:${sev.color}">${typeof m.v === 'string' ? m.v : m.v.join(', ')}</span></div>`
+    ).join("");
+    return `
+      <div class="p-4 rounded-xl border" style="background:${sev.bg}; border-color:${sev.color}33">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] font-semibold px-2 py-0.5 rounded" 
+            style="background:${sev.color}22; color:${sev.color}">${sev.label} · ${item.dimension}</span>
+          <span class="text-[10px] text-slate-500">${item.target}</span>
+        </div>
+        <div class="font-semibold text-sm mb-1.5" style="color:${sev.color}">${item.title}</div>
+        <div class="text-slate-300 text-xs leading-relaxed mb-2.5">${item.detail}</div>
+        ${metrics_html ? `<div class="border-t pt-2" style="border-color:${sev.color}22">${metrics_html}</div>` : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+function renderRecommendations() {
+  const container = document.getElementById("recommendations-cards");
+  if (!container) return;
+
+  const recs = DATA.recommendations || [];
+  if (!recs.length) { container.classList.add("hidden"); return; }
+  container.classList.remove("hidden");
+
+  const prio_color = { "P0 紧急": "#EF4444", "P1 重要": "#F59E0B", "P2 优化": "#10B981" };
+  container.innerHTML = recs.map(r => {
+    const c = prio_color[r.priority.split(" ")[0]] || "#64748B";
+    return `
+      <div class="p-4 rounded-xl border flex gap-4 items-start"
+        style="background:rgba(15,23,42,0.5); border-color:${c}44">
+        <div class="text-2xl">${r.icon || "🎯"}</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded" 
+              style="background:${c}22; color:${c}">${r.priority}</span>
+            <span class="font-semibold text-sm" style="color:var(--chart-text-bold)">${r.title}</span>
+          </div>
+          <div class="text-slate-300 text-xs leading-relaxed mb-1.5">
+            <span class="text-slate-500">📐 行动：</span>${r.action}
+          </div>
+          ${r.rationale ? `<div class="text-slate-400 text-[11px] leading-relaxed">💡 依据：${r.rationale}</div>` : ""}
+          ${r.success_metric ? `<div class="text-slate-500 text-[11px] mt-1">🎯 ${r.success_metric}</div>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+// —— LLM API 配置 + 提示词 ——
+
+// 默认提示词（user prompt 用 ${...} 作占位符，运行时替换）
+const DEFAULT_PROMPTS = {
+  system: "你是一款自走棋游戏的资深产品分析师。输出使用 Markdown。",
+  user: `你是一款自走棋游戏的资深产品分析师，擅长竞品分析和用户研究。
+
+请基于以下真实采集的数据（约 \${total_docs} 条 TapTap 评论），
+输出一份专业的竞品分析报告，研究对象是【王者万象棋】（刚上线 12 天），
+对标竞品是【金铲铲之战】（运营 5 年）。
+
+要求输出 4 个章节，每个章节至少 200 字：
+1. 🎯 万象棋核心受众画像（谁在玩？和金铲铲的受众差异？）
+2. 💬 万象棋玩家核心诉求（正面诉求 + 负面痛点，用数据说话）
+3. 📈 金铲铲成功经验借鉴（运营 5 年做对了什么？万象棋能学什么？）
+4. 🎯 万象棋行动建议（按 P0/P1/P2 优先级排序，要具体可执行）
+
+数据（压缩后）：
+\${context}
+
+注意：
+- 所有结论必须基于上面的数据，不要凭空编造
+- 直接输出报告正文，不需要"好的，我来分析"之类的开场白
+- 语言专业但易懂，适合放在简历项目展示
+- 使用 Markdown 格式（标题用 ##，列表用 -）`,
+};
+
+// —— 提示词模板库（下拉选择快速填充）——
+const PROMPT_TEMPLATES = {
+  default: DEFAULT_PROMPTS,
+
+  brief: {
+    system: "你是简洁的竞品分析助手。",
+    user: `用不超过 300 字，基于以下 \${total_docs} 条 TapTap 评论数据，
+对【王者万象棋】vs【金铲铲之战】做一句话竞品分析，然后列出：
+1. 万象棋最突出的 3 个优势
+2. 万象棋最严重的 3 个问题
+3. 金铲铲最值得借鉴的 2 点
+
+数据：
+\${context}
+
+不要废话，直接给结论。`,
+  },
+
+  strategy: {
+    system: "你是自走棋领域资深战略顾问。",
+    user: `基于 \${total_docs} 条 TapTap 评论数据，帮【王者万象棋】制定一份可落地的运营策略。
+
+分三层输出：
+
+## 第一层：紧急救火（上线 2 周内必须做的）
+从差评高频词中挑 Top 3 痛点，给具体动作。
+
+## 第二层：运营 100 天计划
+按 0-30 天 / 31-60 天 / 61-100 天分阶段，每个阶段 2-3 件事。
+
+## 第三层：差异化护城河
+金铲铲运营 5 年没解决好的、万象棋可以做的差异化方向。
+
+数据：
+\${context}
+
+每个建议必须绑定具体证据（评论里的原话或数据），不要说空话。`,
+  },
+
+  painpoint: {
+    system: "你是用户体验研究员，擅长差评根因分析。",
+    user: `聚焦差评，帮我诊断【王者万象棋】的核心问题。
+
+基于 \${total_docs} 条评论，重点看 1-2 星的差评，输出：
+
+## ⚠️ 差评根因图谱（5 个根因）
+每个根因配：评论原话 + 频率 + 你对根因的解读
+
+## 📊 和金铲铲差评对比
+金铲铲差评里万象棋没有但应该有的共性问题是什么？
+
+## 🎯 改进优先级矩阵
+用 2x2 矩阵（影响大/小 × 易做/难做），标注每个改进项的位置。
+
+数据：
+\${context}
+
+结论必须有真实评论支撑，不要凭空猜测。`,
+  },
+};
+
+function applyPromptTemplate(key) {
+  if (!key || !PROMPT_TEMPLATES[key]) return;
+  const t = PROMPT_TEMPLATES[key];
+  document.getElementById("prompt-system").value = t.system;
+  document.getElementById("prompt-user").value   = t.user;
+  showToast(`✅ 已应用模板：${key}`);
+}
+
+const LLM_PRESETS = {
+  deepseek: { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-flash" },
+  doubao:   { endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", model: "" },
+  openai:   { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
+  qwen:     { endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen-plus" },
+  custom:   { endpoint: "", model: "" },
+};
+
+// 容错：只填了 base_url（如 https://api.deepseek.com）时自动补全接口路径
+function normalizeEndpoint(url) {
+  let u = (url || "").trim().replace(/\/+$/, "");   // 去掉结尾斜杠
+  if (!u) return "";
+  if (/\/(chat\/completions|responses|completions)$/.test(u)) return u;  // 已是完整路径
+  return u + "/chat/completions";                   // 补全
+}
+
+function onLLMProviderChange() {
+  const prov = document.getElementById("llm-provider").value;
+  const preset = LLM_PRESETS[prov] || {};
+  document.getElementById("llm-endpoint").value = preset.endpoint || "";
+  if (!document.getElementById("llm-model").value) {
+    document.getElementById("llm-model").value = preset.model || "";
+  }
+}
+
+function saveLLMConfig() {
+  const cfg = {
+    provider: document.getElementById("llm-provider").value,
+    endpoint: document.getElementById("llm-endpoint").value.trim(),
+    model: document.getElementById("llm-model").value.trim(),
+    apikey: document.getElementById("llm-apikey").value.trim(),
+  };
+  localStorage.setItem("taptap_llm_config", JSON.stringify(cfg));
+  showToast("✅ API 配置已保存到浏览器");
+}
+
+function loadLLMConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("taptap_llm_config") || "null");
+    if (saved) {
+      document.getElementById("llm-provider").value = saved.provider || "deepseek";
+      document.getElementById("llm-endpoint").value = saved.endpoint || "";
+      document.getElementById("llm-model").value = saved.model || "";
+      document.getElementById("llm-apikey").value = saved.apikey || "";
+    } else {
+      onLLMProviderChange();
+    }
+  } catch { onLLMProviderChange(); }
+
+  // 同时加载提示词
+  loadPromptConfig();
+}
+
+// —— 提示词保存/加载/重置 ——
+function loadPromptConfig() {
+  let p = DEFAULT_PROMPTS;
+  try {
+    const saved = JSON.parse(localStorage.getItem("taptap_prompt_config") || "null");
+    if (saved) p = { ...DEFAULT_PROMPTS, ...saved };
+  } catch {}
+  document.getElementById("prompt-system").value = p.system;
+  document.getElementById("prompt-user").value = p.user;
+}
+
+function savePromptConfig() {
+  const cfg = {
+    system: document.getElementById("prompt-system").value.trim(),
+    user:   document.getElementById("prompt-user").value,
+  };
+  localStorage.setItem("taptap_prompt_config", JSON.stringify(cfg));
+  showToast("✅ 提示词已保存");
+}
+
+function resetPromptConfig() {
+  document.getElementById("prompt-system").value = DEFAULT_PROMPTS.system;
+  document.getElementById("prompt-user").value   = DEFAULT_PROMPTS.user;
+  localStorage.removeItem("taptap_prompt_config");
+  showToast("↺ 已重置为默认提示词");
+}
+
+// —— LLM 调用 + 流式渲染 ——
+async function generateAIReport() {
+  const cfg_raw = localStorage.getItem("taptap_llm_config");
+  if (!cfg_raw) { alert("请先点击 🔑 API Key 配置大模型参数"); return; }
+  let cfg;
+  try { cfg = JSON.parse(cfg_raw); } catch { alert("配置损坏"); return; }
+  if (!cfg.endpoint || !cfg.apikey || !cfg.model) { alert("请填写完整的 Endpoint / Model / API Key"); return; }
+
+  // UI 状态
+  const btn = document.getElementById("btn-ai-report");
+  const reportDiv = document.getElementById("ai-report");
+  const statusDiv = document.getElementById("ai-report-status");
+  const contentDiv = document.getElementById("ai-report-content");
+  reportDiv.classList.remove("hidden");
+  btn.disabled = true;
+  btn.textContent = "⏳ 生成中...";
+  statusDiv.textContent = "调用大模型中...";
+  contentDiv.textContent = "";
+
+  // 构建 prompt（从配置读取 + 占位符替换）
+  const context = DATA.llm_context || "（上下文不可用）";
+  const totalDocs = DATA.bm25?.total_docs || 0;
+
+  // 优先用 UI 里最新编辑的提示词（没保存也能用），否则从 localStorage
+  let sysPrompt = document.getElementById("prompt-system").value.trim();
+  let userTemplate = document.getElementById("prompt-user").value;
+  if (!sysPrompt) { sysPrompt = DEFAULT_PROMPTS.system; }
+  if (!userTemplate) { userTemplate = DEFAULT_PROMPTS.user; }
+
+  // 替换占位符：${context} ${total_docs}
+  const finalUserPrompt = userTemplate
+    .replace(/\$\{context\}/g, context)
+    .replace(/\$\{total_docs\}/g, totalDocs);
+
+  try {
+    const resp = await fetch(normalizeEndpoint(cfg.endpoint), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cfg.apikey}`,
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [
+          { role: "system", content: sysPrompt },
+          { role: "user", content: finalUserPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+        // DeepSeek V4+ 默认开思考模式会导致 message.content 为 null（思维链在 reasoning_content）
+        // 竞品分析不需要思维链，关掉更稳、更快、更省 token
+        thinking: { type: "disabled" },
+      }),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
+    }
+
+    const json = await resp.json();
+    // 调试：原始响应打控制台（Ctrl+Shift+J 打开 DevTools 看 Network / Console）
+    console.log("[DeepSeek 原始响应]", json);
+
+    // 兼容多字段取值：message.content → 被思考链占用时 → reasoning_content → responses API 格式
+    let report =
+      json.choices?.[0]?.message?.content ||
+      json.choices?.[0]?.message?.reasoning_content ||
+      json.output_text ||
+      "";
+
+    if (!report) {
+      // 把响应里所有关键字段打出来，帮助排查到底返回了什么
+      console.warn("[DeepSeek] content 为空，完整响应：", json);
+      const hint = JSON.stringify({
+        choices_len: json.choices?.length,
+        finish_reason: json.choices?.[0]?.finish_reason,
+        message_keys: json.choices?.[0]?.message
+          ? Object.keys(json.choices[0].message)
+          : null,
+        usage: json.usage,
+      });
+      throw new Error("API 返回了 200 但 content 为空。调试信息：" + hint);
+    }
+
+    // ✅ 用真正的 Markdown 渲染器，所有 # / ** / - / ` 都能正确处理
+    // 先把 contentDiv 切到 markdown 模式（允许 HTML 注入）
+    contentDiv.classList.add("markdown-body");
+    contentDiv.innerHTML = marked.parse(report);
+
+    statusDiv.textContent = `✅ 已生成 · 共 ${report.length} 字符`;
+  } catch (err) {
+    contentDiv.innerHTML = `<div style="color:#EF4444">❌ 生成失败: ${err.message}</div>
+      <div style="color:#94a3b8;font-size:11px;margin-top:8px">
+      正在请求：${normalizeEndpoint(cfg.endpoint)}<br>
+      · 404 = 接口地址不对。DeepSeek 要填 https://api.deepseek.com/chat/completions（只填 https://api.deepseek.com 也可，会自动补全）<br>
+      · 401 = API Key 无效<br>
+      · 400 = 模型名不对，DeepSeek 用 deepseek-flash 或 deepseek-v4-pro</div>`;
+    statusDiv.textContent = "❌ 失败";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🤖 AI 重新生成";
+  }
+}
+
+// ============================================================
+// IntersectionObserver —— 滚动渐入动效
+// ============================================================
+function initRevealObserver() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, idx) => {
+      if (entry.isIntersecting) {
+        setTimeout(() => {
+          entry.target.classList.add("visible");
+        }, idx * 80); // 交错延迟
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll(".reveal").forEach(el => observer.observe(el));
+}
+
+// ============================================================
+// 关键发现卡片 —— 鼠标跟随光效
+// ============================================================
+document.addEventListener("mousemove", (e) => {
+  document.querySelectorAll(".finding-card").forEach(card => {
+    const rect = card.getBoundingClientRect();
+    card.style.setProperty("--mx", `${e.clientX - rect.left}px`);
+    card.style.setProperty("--my", `${e.clientY - rect.top}px`);
+  });
+});
+
+// ---- 窗口 resize 时重绘所有图表 ----
+window.addEventListener("resize", () => {
+  document.querySelectorAll(".chart-box, .chart-box-sm, .wordcloud-box").forEach(el => {
+    const inst = echarts.getInstanceByDom(el);
+    if (inst) inst.resize();
+  });
+});
+
+// ============================================================
+// 🆕 TapTap 官方数据渲染
+// ============================================================
+function formatNum(n) {
+  if (!n) return "--";
+  if (n >= 100000000) return (n / 100000000).toFixed(1) + "亿";
+  if (n >= 10000) return (n / 10000).toFixed(1) + "万";
+  return n.toLocaleString();
+}
+
+function renderAppStats() {
+  const stats = DATA.app_stats || {};
+  const overview = DATA.overview || {};
+
+  function fill(game, dom_prefix, color) {
+    const s = stats[game];
+    if (!s || (!s.rating && !s.rating_count)) {
+      // 接口没数据，隐藏整个区域
+      const section = document.getElementById("section-app-stats");
+      if (section) section.style.display = "none";
+      return;
+    }
+    document.getElementById(`${dom_prefix}-rating`).textContent = s.rating || "--";
+    document.getElementById(`${dom_prefix}-rating-count`).textContent = formatNum(s.rating_count);
+    document.getElementById(`${dom_prefix}-follow`).textContent = formatNum(s.follow_count);
+    document.getElementById(`${dom_prefix}-download`).textContent = formatNum(s.download_count);
+    // 标签
+    document.getElementById(`app-stats-${dom_prefix === "app-wzq" ? "wzq" : "jcc"}-tags`).textContent = 
+      (s.tags || []).slice(0, 2).join(" · ");
+    // 抽样 vs 官方对比
+    const o = overview[game];
+    if (o && s.rating) {
+      const diff = (o.avg_score - s.rating).toFixed(2);
+      const sign = diff > 0 ? "↑" : diff < 0 ? "↓" : "≈";
+      const cls = diff > 0 ? "text-emerald-400" : diff < 0 ? "text-rose-400" : "text-slate-400";
+      const txt = diff > 0 ? `抽样比官方高 ${Math.abs(diff)}` : 
+                  diff < 0 ? `抽样比官方低 ${Math.abs(diff)}` : `完全一致`;
+      document.getElementById(`${dom_prefix}-compare`).innerHTML = 
+        `<span class="${cls}">${sign} ${txt}</span>`;
+    }
+  }
+
+  fill(GAME_A, "app-wzq", COLOR_A);
+  fill(GAME_B, "app-jcc", COLOR_B);
+}
+
+// ============================================================
+// 🆕 分析维度设置（localStorage 持久化）
+// ============================================================
+const SETTINGS_KEY = "taptap_dashboard_settings";
+
+// 默认设置
+const DEFAULT_SETTINGS = {
+  sections: {
+    "section-app-stats": true,
+    "section-rating": true,
+    "section-playtime": true,
+    "section-trend": true,
+    "section-wordcloud": true,
+    "section-negcloud": true,
+    "section-reviews": true,
+    "section-persona": true,
+    "section-lifecycle": true,
+  },
+  wordcloudTopN: 100,
+  topReviewsN: 5,
+  hiddenTags: [],
+};
+
+let CURRENT_SETTINGS = { ...DEFAULT_SETTINGS };
+
+function toggleSettings() {
+  const panel = document.getElementById("settings-panel");
+  const overlay = document.getElementById("settings-overlay");
+  const isOpen = panel.style.transform !== "translateX(100%)";
+  if (isOpen) {
+    panel.style.transform = "translateX(100%)";
+    overlay.classList.add("hidden");
+  } else {
+    panel.style.transform = "translateX(0)";
+    overlay.classList.remove("hidden");
+  }
+}
+
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    if (saved) CURRENT_SETTINGS = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+  } catch(e) {}
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(CURRENT_SETTINGS));
+  } catch(e) {}
+}
+
+function resetSettings() {
+  CURRENT_SETTINGS = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  initSettings();
+  applySettings();
+}
+
+function getSectionEl(sectionId) {
+  // 把 setting key 映射到 HTML section id
+  const map = {
+    "section-app-stats": "section-app-stats",
+    "section-rating": "section-rating",
+    "section-playtime": "section-playtime",
+    "section-trend": "section-trend",
+    "section-wordcloud": "section-wordcloud",
+    "section-negcloud": "section-negcloud",
+    "section-reviews": "section-reviews",
+    "section-persona": "section-persona",
+    "section-lifecycle": "section-lifecycle",
+  };
+  return document.getElementById(map[sectionId] || sectionId);
+}
+
+function initSettings() {
+  loadSettings();
+
+  // 恢复 checkbox 状态
+  const cbMap = {
+    "opt-rating": "section-rating",
+    "opt-playtime": "section-playtime",
+    "opt-trend": "section-trend",
+    "opt-wordcloud": "section-wordcloud",
+    "opt-negcloud": "section-negcloud",
+    "opt-reviews": "section-reviews",
+    "opt-persona": "section-persona",
+    "opt-lifecycle": "section-lifecycle",
+    "opt-stats": "section-app-stats",
+  };
+  Object.entries(cbMap).forEach(([cbId, key]) => {
+    const el = document.getElementById(cbId);
+    if (el) el.checked = CURRENT_SETTINGS.sections[key] !== false;
+  });
+
+  // 恢复 select 状态
+  const wc = document.getElementById("opt-wordcount");
+  if (wc) wc.value = CURRENT_SETTINGS.wordcloudTopN || 100;
+  const topN = document.getElementById("opt-topn");
+  if (topN) topN.value = CURRENT_SETTINGS.topReviewsN || 5;
+
+  // 渲染标签过滤选项
+  const tagsDiv = document.getElementById("opt-tags");
+  if (tagsDiv && DATA.player_persona) {
+    const allTags = new Set();
+    Object.values(DATA.player_persona).forEach(p => {
+      (p.tag_distribution || []).forEach(t => allTags.add(t.name));
+    });
+    tagsDiv.innerHTML = Array.from(allTags).sort().map(tag => `
+      <label class="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" class="tag-cb" data-tag="${tag}" 
+               ${!CURRENT_SETTINGS.hiddenTags.includes(tag) ? "checked" : ""} 
+               onchange="onTagToggle()"> ${tag}
+      </label>
+    `).join("");
+  }
+}
+
+function onTagToggle() {
+  const hidden = [];
+  document.querySelectorAll(".tag-cb").forEach(cb => {
+    if (!cb.checked) hidden.push(cb.dataset.tag);
+  });
+  CURRENT_SETTINGS.hiddenTags = hidden;
+  saveSettings();
+  applySettings();
+}
+
+function applySettings() {
+  const cbMap = {
+    "opt-rating": "section-rating",
+    "opt-playtime": "section-playtime",
+    "opt-trend": "section-trend",
+    "opt-wordcloud": "section-wordcloud",
+    "opt-negcloud": "section-negcloud",
+    "opt-reviews": "section-reviews",
+    "opt-persona": "section-persona",
+    "opt-lifecycle": "section-lifecycle",
+    "opt-stats": "section-app-stats",
+  };
+  Object.entries(cbMap).forEach(([cbId, key]) => {
+    const cb = document.getElementById(cbId);
+    if (!cb) return;
+    CURRENT_SETTINGS.sections[key] = cb.checked;
+    const el = getSectionEl(key);
+    if (el) el.style.display = cb.checked ? "" : "none";
+  });
+
+  // 词云数量
+  const wc = document.getElementById("opt-wordcount");
+  if (wc) CURRENT_SETTINGS.wordcloudTopN = parseInt(wc.value);
+  // 热门评论数量
+  const topN = document.getElementById("opt-topn");
+  if (topN) CURRENT_SETTINGS.topReviewsN = parseInt(topN.value);
+
+  saveSettings();
+
+  // 重新渲染受影响的模块
+  renderWordcloud(GAME_A, "wordcloud-wzq", COLOR_A, "all", CURRENT_SETTINGS.wordcloudTopN);
+  renderWordcloud(GAME_B, "wordcloud-jcc", COLOR_B, "all", CURRENT_SETTINGS.wordcloudTopN);
+  renderWordcloud(GAME_A, "negcloud-wzq", COLOR_NEG, "negative", CURRENT_SETTINGS.wordcloudTopN);
+  renderWordcloud(GAME_B, "negcloud-jcc", COLOR_NEG, "negative", CURRENT_SETTINGS.wordcloudTopN);
+  renderTopReviews(GAME_A, "reviews-wzq", CURRENT_SETTINGS.topReviewsN);
+  renderTopReviews(GAME_B, "reviews-jcc", CURRENT_SETTINGS.topReviewsN);
+  showPersona(currentPersonaGame);
+
+  // resize 所有图表（因为显示/隐藏可能改变尺寸）
+  setTimeout(() => {
+    document.querySelectorAll(".chart-box, .chart-box-sm, .wordcloud-box").forEach(el => {
+      const inst = echarts.getInstanceByDom(el);
+      if (inst) inst.resize();
+    });
+  }, 100);
+}
+
+// ============================================================
+// 🆕 BM25 语义检索（轻量版，零后端依赖）
+// ============================================================
+
+// BM25 超参数
+const BM25_K1 = 1.5;   // 词频饱和度参数
+const BM25_B = 0.75;   // 文档长度归一化参数
+
+function setQuery(text) {
+  document.getElementById("bm25-query").value = text;
+  doBM25Search();
+}
+
+function tokenizeQuery(raw) {
+  // 浏览器里没法跑 jieba，简化版：按空格/标点/中文分隔符拆分
+  // 并做基本的停用词过滤
+  const STOP = new Set(["的","了","是","在","有","和","不","人","都","上","也","很","到","说","要","去","会","着","被","让","给","吧","啊","呢","哦","嗯","呀","还","再","就","可以","不行","不会","不能"]);
+  const tokens = raw.split(/[\s,，。、！!?？；;：:""'（）()\[\]【】\/\\\-\.]+/).map(s => s.trim()).filter(s => s && s.length >= 2);
+  return tokens.filter(t => !STOP.has(t.toLowerCase()));
+}
+
+function bm25Score(queryTokens, doc, idf, avgdl) {
+  // BM25: score(q, d) = Σ IDF(t) * TF(t,d) * (k1+1) / (TF(t,d) + k1*(1-b + b*dl/avgdl))
+  let score = 0;
+  const tf = doc.tf || {};
+  const dl = doc.dl || 0;
+  const denom_base = BM25_K1 * (1 - BM25_B + BM25_B * (dl / (avgdl || 1)));
+  for (const q of queryTokens) {
+    const tftd = tf[q] || 0;
+    if (tftd === 0) continue;              // 查询词不在该文档 → 跳过
+    const idfVal = idf[q] || 0;            // 0 = 稀有词，不计分
+    if (idfVal === 0) continue;
+    const numerator = tftd * (BM25_K1 + 1);
+    const denominator = tftd + denom_base;
+    score += idfVal * numerator / denominator;
+  }
+  return score;
+}
+
+function highlight(text, tokens) {
+  // 把匹配的词高亮
+  let html = text;
+  tokens.forEach(t => {
+    if (!t) return;
+    const re = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    html = html.replace(re, `<mark style="background: var(--color-negative); color: #fff; padding: 0 2px; border-radius: 2px">${t}</mark>`);
+  });
+  return html;
+}
+
+function doBM25Search() {
+  const qInput = document.getElementById("bm25-query").value.trim();
+  if (!qInput) return;
+
+  const bm25 = DATA.bm25;
+  if (!bm25) { alert("BM25 索引未就绪，请先跑 prepare_data.py"); return; }
+
+  const avgdl = bm25.avgdl;
+  const idf = bm25.idf || {};
+  let queryTokens = tokenizeQuery(qInput);
+
+  // 如果用户没分词，尝试当作一个整体匹配（比如 "ELO控牌"）
+  if (queryTokens.length === 0) queryTokens = [qInput];
+
+  // 过滤器
+  const fGame = document.getElementById("bm25-filter-game").value;
+  const fScore = document.getElementById("bm25-filter-score").value;
+
+  let scored = bm25.reviews
+    .filter(doc => {
+      if (fGame && doc.game !== fGame) return false;
+      if (fScore === "low" && doc.score > 2) return false;
+      if (fScore === "high" && doc.score < 4) return false;
+      if (fScore && !isNaN(parseInt(fScore)) && doc.score !== parseInt(fScore)) return false;
+      return true;
+    })
+    .map(doc => ({ doc, score: bm25Score(queryTokens, doc, idf, avgdl) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+
+  // 渲染
+  const container = document.getElementById("bm25-results");
+  container.classList.remove("hidden");
+  document.getElementById("bm25-count").textContent = `· 找到 ${scored.length} 条相关评论`;
+  document.getElementById("bm25-score-note").textContent = `BM25 (k1=${BM25_K1}, b=${BM25_B}) | 查询词: [${queryTokens.join(", ")}]`;
+
+  const listEl = document.getElementById("bm25-results-list");
+  if (scored.length === 0) {
+    listEl.innerHTML = `<div class="text-center py-6 text-slate-500">😢 没有找到相关评论，试试换个关键词？</div>`;
+    return;
+  }
+
+  const COLOR_MAP = { GAME_A: COLOR_A, GAME_B: COLOR_B };
+  listEl.innerHTML = scored.map(({ doc, score }) => {
+    const color = doc.game === GAME_A ? COLOR_A : COLOR_B;
+    const stars = "⭐".repeat(doc.score);
+    const scorePct = Math.min(100, Math.round(score / scored[0].score * 100));
+    return `
+      <div class="review-card p-4 hover:scale-[1.01] transition-transform cursor-pointer">
+        <div class="flex items-center justify-between mb-2 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full" style="background:${color}"></span>
+            <span class="font-medium" style="color:${color}">${doc.game}</span>
+            <span class="text-amber-400">${stars}</span>
+            <span class="text-slate-500">@${doc.nickname}</span>
+          </div>
+          <div class="flex items-center gap-3 text-slate-400">
+            <span>🕐 ${doc.time.slice(0, 10)}</span>
+            <span>⏱️ ${doc.play_hours}h</span>
+            <span class="text-rose-400">👍 ${doc.ups}</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+              style="background:${color}20; color:${color}">BM25 ${scorePct}%</span>
+          </div>
+        </div>
+        <div class="text-slate-200 text-sm leading-relaxed">${highlight(doc.content, queryTokens)}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function clearBM25Results() {
+  document.getElementById("bm25-query").value = "";
+  document.getElementById("bm25-results").classList.add("hidden");
+}
+</script>
+
+</body>
+</html>
