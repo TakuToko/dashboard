@@ -1,0 +1,68 @@
+name: Issue 触发采集
+
+# 任何人在仓库里新建一个标题含「[采集]」的 Issue，就会自动跑一遍采集。
+# 这样无需域名、无需后端、无跨域问题，GitHub 国内也能访问。
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+# 同一时间只跑一个采集，避免并发互相覆盖数据
+concurrency:
+  group: collect-on-issue
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    # 只有标题含 [采集] 的 Issue 才触发，避免误伤正常 Issue
+    if: contains(github.event.issue.title, '[采集]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 采集 + 预处理分析
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python run_all.py
+
+      - name: 提交并推送更新后的看板数据
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard
+          if git diff --cached --quiet; then
+            echo "数据无变化，跳过提交"
+          else
+            git commit -m "chore(data): Issue 触发采集 $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
+
+      - name: 回帖并关闭 Issue（成功）
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "✅ 采集完成，看板数据已更新。稍等 1–2 分钟等站点重新部署后，回到页面 Ctrl+F5 强刷即可看到新版本。"
+          gh issue close ${{ github.event.issue.number }}
+
+      - name: 回帖（失败）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "❌ 本次采集失败，请到 Actions 查看日志：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

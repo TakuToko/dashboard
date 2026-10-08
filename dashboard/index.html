@@ -987,41 +987,29 @@ function refreshVersions() {
 }
 
 // ============================================================
-// 🆕 云端重新采集：调 Cloudflare Worker → 触发 GitHub Actions
+// 🆕 云端重新采集：通过 GitHub Issue 触发 Actions（无需域名/后端）
 // ============================================================
 
-// ⚠️ 部署 Cloudflare Worker 后，把下面这个地址换成你实际的 Worker 地址
-const COLLECT_WORKER_URL = "https://dashboard-collect.takutoko.workers.dev";
+// 采集改由「GitHub Issue」触发（无需域名 / 无需后端 / 无跨域问题）：
+// 点按钮 → 打开仓库的新建 Issue 页 → 提交后 Action 自动采集 → 完成后自动关闭 Issue
+const GITHUB_REPO_SLUG = "TakuToko/dashboard";
 
-async function triggerCollect() {
-  if (COLLECT_WORKER_URL.includes("YOUR-SUBDOMAIN")) {
-    alert("⚠️ 尚未配置云端采集服务\n\n" +
-          "请先部署 Cloudflare Worker，并把 worker 地址填入 index.html 的 COLLECT_WORKER_URL。");
-    return;
-  }
-  if (!confirm("确定要重新采集 TapTap 评论吗？\n\n" +
-               "云端将运行「爬虫 + AI 分析」，约需几分钟。\n" +
-               "完成后本页刷新即可看到新版本。")) return;
-
-  const btn = document.getElementById("collect-btn");
-  const oldText = btn ? btn.textContent : "";
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ 触发中..."; }
-  try {
-    const resp = await fetch(COLLECT_WORKER_URL, { method: "POST" });
-    const out = await resp.json().catch(() => ({}));
-    if (resp.ok && out.ok) {
-      alert("✅ 已触发云端采集（约几分钟）。\n\n" +
-            "完成后点击「🔄 刷新」或 Ctrl+F5 强刷，新版本会出现在「知识库版本」下拉框。");
-    } else {
-      alert("❌ 触发失败：" + (out.error || ("HTTP " + resp.status)) +
-            (out.detail ? "\n\n" + out.detail : ""));
-    }
-  } catch (e) {
-    alert("❌ 无法连接采集服务：" + e.message +
-          "\n\n请检查 Worker 是否已部署、地址是否正确。");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = oldText; }
-  }
+function triggerCollect() {
+  const stamp = new Date().toLocaleString("zh-CN", { hour12: false });
+  const title = `[采集] 重新采集评论 ${stamp}`;
+  const body =
+    "由看板页面的「云端重新采集」按钮自动创建。\n" +
+    "请不要改动标题中的 [采集] 标记，它是触发条件。\n\n" +
+    "提交后采集会自动开始，完成后本 Issue 会自动关闭。\n" +
+    `触发时间：${stamp}`;
+  const url = `https://github.com/${GITHUB_REPO_SLUG}/issues/new`
+    + `?title=${encodeURIComponent(title)}`
+    + `&body=${encodeURIComponent(body)}`;
+  if (!confirm("即将跳转到 GitHub 新建一个 Issue 来触发采集。\n\n" +
+               "· 若未登录 GitHub，会先要求登录\n" +
+               "· 提交后采集自动开始，完成后 Issue 会自动关闭\n" +
+               "· 采集约需几分钟，结束后回本页 Ctrl+F5 强刷\n\n继续？")) return;
+  window.open(url, "_blank", "noopener");
 }
 
 // 当前版本缺失的模块 → 降级提示文案
