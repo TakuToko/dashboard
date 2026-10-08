@@ -1,0 +1,43 @@
+name: 采集数据并更新看板
+
+# 手动触发：可来自 GitHub 网页的 Run workflow 按钮，
+# 也可由 Cloudflare Worker 调用 GitHub API 触发（网页上的「重新采集」按钮）。
+on:
+  workflow_dispatch:
+
+# 需要写权限，才能把新生成的数据 commit 回仓库
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 采集 + 预处理分析
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python run_all.py
+
+      - name: 提交并推送更新后的看板数据
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard
+          if git diff --cached --quiet; then
+            echo "数据无变化，跳过提交"
+          else
+            git commit -m "chore(data): 自动更新看板数据 $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi

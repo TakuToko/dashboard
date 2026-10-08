@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.vscode/      
+*.xlsx         
+stop_point.txt  
+.env
+.env.local
+data/phrase_cache_*.json  

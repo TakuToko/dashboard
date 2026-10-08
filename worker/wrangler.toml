@@ -1,0 +1,14 @@
+name = "dashboard-collect"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# 普通变量（非敏感，可公开）
+[vars]
+GITHUB_OWNER = "TakuToko"
+GITHUB_REPO = "dashboard"
+WORKFLOW_FILE = "update-data.yml"
+GITHUB_BRANCH = "main"
+ALLOWED_ORIGIN = "https://takutoko.github.io"
+
+# GITHUB_TOKEN 不要写在这里！用命令设置为加密 Secret：
+#   wrangler secret put GITHUB_TOKEN
