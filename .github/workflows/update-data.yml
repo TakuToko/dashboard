@@ -41,3 +41,36 @@ jobs:
             git commit -m "chore(data): 自动更新看板数据 $(date -u +'%Y-%m-%d %H:%M UTC')"
             git push
           fi
+
+  # 同 collect-on-issue.yml：GITHUB_TOKEN 推送的提交不会触发 deploy-pages.yml，
+  # 所以必须在这里的同一运行里再部署一次 Pages。
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 拉取仓库（含刚提交的数据）
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 打包 dashboard/ 目录为站点产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+
+      - name: 发布
+        id: deployment
+        uses: actions/deploy-pages@v4
