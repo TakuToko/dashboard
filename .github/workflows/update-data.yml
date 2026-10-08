@@ -1,7 +1,6 @@
 name: 采集数据并更新看板
 
-# 手动触发：可来自 GitHub 网页的 Run workflow 按钮，
-# 也可由 Cloudflare Worker 调用 GitHub API 触发（网页上的「重新采集」按钮）。
+# 手动触发：来自 GitHub 网页的 Run workflow 按钮。
 on:
   workflow_dispatch:
 
@@ -42,21 +41,12 @@ jobs:
             git push
           fi
 
-  # 同 collect-on-issue.yml：GITHUB_TOKEN 推送的提交不会触发 deploy-pages.yml，
+  # GITHUB_TOKEN 推送的提交不会触发 deploy-pages.yml，
   # 所以必须在这里的同一运行里再部署一次 Pages。
-  deploy:
+  # 打包与部署拆成独立 job（官方推荐结构）：部署 job 会在产物生成几秒后才查询，避免时序问题。
+  package:
     needs: update
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: 拉取仓库（含刚提交的数据）
         uses: actions/checkout@v4
@@ -71,6 +61,16 @@ jobs:
         with:
           path: dashboard
 
-      - name: 发布
+  deploy:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 发布到 GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
