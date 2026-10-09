@@ -68,7 +68,6 @@
     box-shadow: 0 0 14px -2px var(--color-a-glow);
   }
   .module-title { font-size: 16px; font-weight: 700; color: #E0E8F5; letter-spacing: .02em; }
-  .module-hint { font-size: 11px; color: #64748b; }
   .module-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(125,141,184,.35), transparent); }
 
   /* 🆕 模块锚点导航 —— 窄屏顶部胶囊 / 宽屏左侧竖栏 */
@@ -131,22 +130,6 @@
 
   <!-- Hero 分隔装饰线 -->
   <div class="hero-divider w-48 mx-auto mt-8"></div>
-
-  <!-- 元信息 -->
-  <div class="mt-6 flex flex-wrap justify-center gap-6 text-xs text-slate-500">
-    <span class="flex items-center gap-1.5">
-      <span class="w-1.5 h-1.5 rounded-full bg-wzq"></span>
-      TapTap 评论数据
-    </span>
-    <span class="flex items-center gap-1.5">
-      <span class="w-1.5 h-1.5 rounded-full bg-jcc"></span>
-      <span id="hero-collected">采集时间 --</span>
-    </span>
-    <span class="flex items-center gap-1.5">
-      <span class="w-1.5 h-1.5 rounded-full" style="background:var(--color-accent)"></span>
-      jieba 分词 + ECharts 可视化
-    </span>
-  </div>
 </header>
 
 <main class="max-w-[1440px] mx-auto px-6 pb-16 relative z-10">
@@ -157,9 +140,6 @@
   <div class="flex items-center gap-2 mb-4 flex-wrap">
     <span class="text-lg">⭐</span>
     <h2 class="section-title text-lg font-semibold">核心发现</h2>
-    <span class="text-[11px] text-slate-500">
-      只看<span class="text-wzq font-medium">王者万象棋</span>主线 · 完整结论与行动建议见模块 ⑤
-    </span>
   </div>
   <div id="key-findings-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3"></div>
 </section>
@@ -176,7 +156,6 @@
         style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold); min-width: 280px;">
         <option value="" disabled>加载中...</option>
       </select>
-      <span id="version-info" class="text-xs text-slate-500"></span>
     </div>
     <div class="flex items-center gap-2">
       <label class="px-3 py-1.5 rounded-lg text-xs border cursor-pointer hover:opacity-80 transition inline-flex items-center gap-1"
@@ -191,8 +170,6 @@
         style="background: var(--color-accent); border: 1px solid transparent; color: #fff"
         title="在云端重新爬取 TapTap 评论并重跑分析（约几分钟）">☁️ 云端重新采集</button>
     </div>
-    <!-- 🆕 版本元数据：数据采集时间 vs 分析生成时间 + 模块齐全度 -->
-    <div id="version-meta" class="w-full flex items-center gap-x-5 gap-y-1 flex-wrap pt-1 text-[11px] text-slate-500"></div>
     <div id="version-warning" class="w-full hidden mt-1 px-3 py-2 rounded-lg text-[11px] leading-relaxed"
       style="background: rgba(251,191,36,.10); border: 1px solid rgba(251,191,36,.35); color: #FBBF24"></div>
   </div>
@@ -300,7 +277,6 @@
   <div class="module-head">
     <span class="module-index">1</span>
     <span class="module-title">竞品对标</span>
-    <span class="module-hint">先看清比较对象：机制设计差异（行业知识） + 数据对比（本次采集自动生成）</span>
     <span class="module-line"></span>
   </div>
 
@@ -327,7 +303,6 @@
 
     <h3 class="text-slate-300 text-sm font-medium mb-3">
       📈 数据对比
-      <span class="text-[10px] font-normal text-slate-500">（官方数据 + 抽样统计 + 原因短语，全部由本次采集自动生成）</span>
     </h3>
     <div id="data-compare-wrap" class="overflow-x-auto">
       <table class="w-full text-sm border-collapse">
@@ -343,7 +318,6 @@
   <div class="module-head">
     <span class="module-index">2</span>
     <span class="module-title">口碑总览</span>
-    <span class="module-hint">核心指标 · 官方数据 · 评分分布 · 时长对比 · 时间趋势</span>
     <span class="module-line"></span>
   </div>
 
@@ -409,7 +383,7 @@
       </div>
       <!-- 抽样 vs 官方对比条 -->
       <div class="mt-4 pt-3 border-t border-slate-700/50">
-        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 我们抽样分</div>
+        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 抽样分</div>
         <div class="flex gap-2 text-xs">
           <span id="app-wzq-compare" class="text-slate-400"></span>
         </div>
@@ -441,7 +415,7 @@
         </div>
       </div>
       <div class="mt-4 pt-3 border-t border-slate-700/50">
-        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 我们抽样分</div>
+        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 抽样分</div>
         <div class="flex gap-2 text-xs">
           <span id="app-jcc-compare" class="text-slate-400"></span>
         </div>
@@ -578,7 +552,6 @@
   <div class="module-head">
     <span class="module-index">3</span>
     <span class="module-title">玩家声音</span>
-    <span class="module-hint">高频词云 · 差评关键词 · 原因短语榜 · 热门评论（可用顶部检索框验证）</span>
     <span class="module-line"></span>
   </div>
 
@@ -672,7 +645,6 @@
   <div class="module-head">
     <span class="module-index">4</span>
     <span class="module-title">玩家画像</span>
-    <span class="module-hint">生命周期定位 · 玩家成长阶段画像（阶段 × 原因短语矩阵）</span>
     <span class="module-line"></span>
   </div>
 
@@ -693,7 +665,6 @@
 <section id="section-persona" class="glass p-7 mb-8 reveal">
   <h2 class="section-title text-xl font-semibold mb-2">👤 玩家成长阶段画像</h2>
   <div class="text-slate-500 text-sm mb-5 pl-[18px]">
-    <span>万象棋上线不久，按「玩过时长 + 评论内容」划分玩家阶段，回答谁在玩、各阶段在意什么。</span>
     <details class="inline-block align-middle ml-1">
       <summary class="cursor-pointer text-[11px] px-1.5 py-0.5 rounded border list-none inline-block"
         style="border-color: var(--chart-axis); color: var(--chart-text)">? 口径说明</summary>
@@ -734,7 +705,6 @@
     <div>
       <h3 class="text-slate-300 text-sm font-medium mb-3">
         🎯 各阶段最突出原因
-        <span class="text-[10px] font-normal text-slate-500">（按相对全局的提升度排序）</span>
       </h3>
       <div id="stage-phrases" class="max-h-[280px] overflow-y-auto space-y-3 pr-2"></div>
     </div>
@@ -749,7 +719,6 @@
   <div class="module-head">
     <span class="module-index">5</span>
     <span class="module-title">核心结论</span>
-    <span class="module-hint">万象棋主线结论 + 竞品镜鉴 + 行动建议 + AI 综合报告</span>
     <span class="module-line"></span>
   </div>
 
@@ -784,7 +753,6 @@
               style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
             <button onclick="saveLLMConfig()" class="w-full py-1.5 rounded text-xs font-medium hover:opacity-90"
               style="background: var(--color-accent); color: #fff">💾 保存到浏览器</button>
-            <div class="text-[10px] text-slate-500 mt-2">⚠️ API Key 仅存于 localStorage，不会上传任何服务器</div>
           </div>
         </details>
 
@@ -817,9 +785,6 @@
 
             <div class="text-xs font-medium mb-1 flex items-center gap-2" style="color: var(--chart-text-bold)">
               User Prompt 模板
-              <span class="text-[10px] font-normal text-slate-500">
-                占位符：<code>${'{context}'}</code>=评论数据，<code>${'{total_docs}'}</code>=评论数
-              </span>
             </div>
             <textarea id="prompt-user" rows="12" class="w-full mb-3 px-2 py-1.5 rounded text-xs outline-none resize-y font-mono leading-relaxed"
               style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></textarea>
@@ -847,7 +812,6 @@
     <!-- 🎯 行动建议 -->
     <div class="flex items-center gap-2 mb-3">
       <span class="text-sm font-semibold" style="color: var(--color-accent)">🎯 行动建议</span>
-      <span class="text-[11px] text-slate-500">以下建议均针对 <span class="text-wzq font-medium">王者万象棋</span></span>
     </div>
     <div id="recommendations-cards" class="space-y-3 mb-6"></div>
 
@@ -931,12 +895,9 @@ async function loadVersionList() {
     sel.innerHTML = VERSIONS.available.map(v =>
       `<option value="${v.id}" ${v.id === VERSIONS.current ? "selected" : ""}>${v.label}</option>`
     ).join("");
-    document.getElementById("version-info").textContent = 
-      `当前: ${VERSIONS.current} · 共 ${VERSIONS.available.length} 个版本`;
   } else {
     // 没有 versions.json，给个 fallback 选项
     sel.innerHTML = `<option value="">analysis.json（默认）</option>`;
-    document.getElementById("version-info").textContent = "（run prepare_data.py 生成多版本后可切换）";
   }
 }
 
@@ -1022,26 +983,15 @@ const MODULE_NAMES = {
   bm25: "评论语义检索",
 };
 
-// 🆕 版本元数据：数据采集时间 vs 分析生成时间；旧算法版本标灰提示不可比
+// 旧算法版本标灰提示不可比
 function renderVersionMeta(data) {
-  const metaEl = document.getElementById("version-meta");
   const warnEl = document.getElementById("version-warning");
-  if (!metaEl) return;
+  if (!warnEl) return;
 
-  const collected = data.data_collected_at || (data.version_id ? String(data.version_id).replace("_", " ") : "");
-  const generated = data.generated_at || "";
   const schema = data.schema_version ?? 0;
   const latestSchema = VERSIONS?.schema_version ?? 1;
 
-  metaEl.innerHTML = [
-    collected && `<span>🕐 数据采集：${collected}</span>`,
-    generated && `<span>⚙️ 分析生成：${generated}</span>`,
-    `<span>🔢 结构版本：v${schema}</span>`,
-  ].filter(Boolean).join("");
-
-  // Hero 区的采集时间 / 评论数也跟着当前版本走，避免写死
-  const heroCollected = document.getElementById("hero-collected");
-  if (heroCollected) heroCollected.textContent = `采集时间 ${collected || "--"}`;
+  // Hero 副标题的评论数跟着当前版本走，避免写死
   const heroCount = document.getElementById("hero-review-count");
   if (heroCount && data.overview) {
     const total = Object.values(data.overview).reduce((s, g) => s + (g.review_count || 0), 0);
@@ -1746,7 +1696,6 @@ function renderInsights() {
       <div class="flex items-center gap-2 mb-3 pb-2 border-b flex-wrap" style="border-color:${mainMeta.color}44">
         <span class="w-2.5 h-2.5 rounded-full" style="background:${mainMeta.color}"></span>
         <span class="font-semibold text-sm" style="color:${mainMeta.color}">🎯 ${GAME_A} · 主线结论</span>
-        <span class="text-[10px] text-slate-500">${mainItems.length} 条 · 下方行动建议均基于此</span>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         ${mainItems.map(it => renderInsightCard(it)).join("")}
@@ -1757,7 +1706,6 @@ function renderInsights() {
       <div class="flex items-center gap-2 mb-3 pb-2 border-b flex-wrap" style="border-color:rgba(148,163,184,.35)">
         <span class="w-2.5 h-2.5 rounded-full" style="background:#94a3b8"></span>
         <span class="font-semibold text-sm text-slate-400">🔍 竞品镜鉴</span>
-        <span class="text-[10px] text-slate-500">${benchItems.length} 条 · ${GAME_B} 作为基准，用来说明主线结论的量级</span>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         ${benchItems.map(it => renderInsightCard(it, true)).join("")}
@@ -1807,9 +1755,6 @@ function renderInsights() {
               <div class="text-slate-300 leading-relaxed">${_esc(s.content || "")}</div>
             </div>
           `).join("")}
-          <div class="text-[10px] text-slate-600 text-center pt-1">
-            💡 点击任意评论 → 在原处展开完整原文
-          </div>
         </div>
       </div>
     ` : "";
