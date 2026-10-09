@@ -1,5 +1,5 @@
 {
-  "current": "20261008_083526",
+  "current": "20261009_015314",
   "available": [
     {
       "id": "20261008_083526",
@@ -8,6 +8,22 @@
       "schema_version": 1,
       "data_collected_at": "2026-10-08 08:35",
       "generated_at": "2026-10-08 08:35",
+      "modules": [
+        "llm_phrases",
+        "data_compare",
+        "insights",
+        "recommendations",
+        "key_findings",
+        "bm25"
+      ]
+    },
+    {
+      "id": "20261009_015314",
+      "label": "2026-10-09 01:53 · 1000条 · 3153KB",
+      "size": 3229407,
+      "schema_version": 1,
+      "data_collected_at": "2026-10-09 01:53",
+      "generated_at": "2026-10-09 01:53",
       "modules": [
         "llm_phrases",
         "data_compare",
