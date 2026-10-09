@@ -156,6 +156,7 @@
         style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold); min-width: 280px;">
         <option value="" disabled>加载中...</option>
       </select>
+      <span id="version-info" class="text-[11px] text-slate-500"></span>
     </div>
     <div class="flex items-center gap-2">
       <label class="px-3 py-1.5 rounded-lg text-xs border cursor-pointer hover:opacity-80 transition inline-flex items-center gap-1"
@@ -281,11 +282,7 @@
   </div>
 
   <section id="section-compare" class="glass p-7 mb-8 reveal">
-    <h2 class="section-title text-xl font-semibold mb-2">📊 竞品对标</h2>
-    <p class="text-slate-500 text-sm mb-5 pl-[18px]">
-      上半部分是<b>人工维护的行业知识</b>（设计上有何不同），下半部分是<b>本次采集自动生成</b>的数据对比（玩家实际怎么评价）。
-      玩家痛点/好评以数据对比表为准。
-    </p>
+    <h2 class="section-title text-xl font-semibold mb-5">📊 竞品对标</h2>
 
     <h3 class="text-slate-300 text-sm font-medium mb-3">🧩 机制设计差异</h3>
     <div class="overflow-x-auto mb-8">
@@ -353,7 +350,6 @@
 <section id="section-app-stats" class="mb-8 fade-in">
   <div class="flex items-center justify-between mb-4">
     <h2 class="section-title text-lg font-semibold">📱 TapTap 官方数据（交叉验证）</h2>
-    <span class="text-xs text-slate-500">对比我们的抽样 vs TapTap 官方</span>
   </div>
   <div class="grid grid-cols-2 lg:grid-cols-2 gap-5">
     <!-- 万象棋官方 -->
@@ -531,8 +527,7 @@
 
 <!-- ②-4 玩过时长 vs 评分 -->
 <section id="section-playtime" class="glass p-7 mb-8 reveal">
-  <h2 class="section-title text-xl font-semibold mb-2">玩家时长 vs 平均评分</h2>
-  <p class="text-slate-500 text-sm mb-5 pl-[18px]">新玩家 vs 老玩家口碑对比，看哪款游戏越玩越上瘾</p>
+  <h2 class="section-title text-xl font-semibold mb-5">玩家时长 vs 平均评分</h2>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <div id="chart-playtime-wzq" class="chart-box-sm"></div>
     <div id="chart-playtime-jcc" class="chart-box-sm"></div>
@@ -557,8 +552,7 @@
 
 <!-- ③-1 高频词云 -->
 <section id="section-wordcloud" class="glass p-7 mb-8 reveal">
-  <h2 class="section-title text-xl font-semibold mb-2">用户高频词云</h2>
-  <p class="text-slate-500 text-sm mb-5 pl-[18px]">基于全部评论 jieba 分词，反映用户讨论焦点</p>
+  <h2 class="section-title text-xl font-semibold mb-5">用户高频词云</h2>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <div class="relative">
       <div class="text-center font-medium mb-2 flex items-center justify-center gap-2">
@@ -579,8 +573,7 @@
 
 <!-- ③-2 差评关键词 -->
 <section id="section-negcloud" class="glass p-7 mb-8 reveal">
-  <h2 class="section-title text-xl font-semibold mb-2">⚠️ 差评关键词（评分 ≤ 2）</h2>
-  <p class="text-slate-500 text-sm mb-5 pl-[18px]">深入挖掘打低分的用户到底在抱怨什么</p>
+  <h2 class="section-title text-xl font-semibold mb-5">⚠️ 差评关键词（评分 ≤ 2）</h2>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <div>
       <div class="text-center text-wzq font-medium mb-2">万象棋 · 负面词</div>
@@ -595,12 +588,7 @@
 
 <!-- ③-3 原因短语榜（LLM 归纳 + 规则锚定） -->
 <section id="section-phrases" class="glass p-7 mb-8 reveal">
-  <h2 class="section-title text-xl font-semibold mb-2">🎯 差评 / 好评原因短语榜</h2>
-  <p class="text-slate-500 text-sm mb-5 pl-[18px]">
-    AI 从最热门评论中归纳「具体原因短语」，再由规则引擎回扫对应倾向的评论锚定真实占比
-    （差评榜 % = 提及该原因的差评 / 该游戏差评总数，好评榜同理，仅在同类评论内统计，不含跨星级样本）；
-    <span class="text-slate-400">点击原因行 → 在检索区搜索相关评论；展开样本后点击某条评论 → 在原处展开完整原文</span>
-  </p>
+  <h2 class="section-title text-xl font-semibold mb-5">🎯 差评 / 好评原因短语榜</h2>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
     <div>
       <div class="font-medium mb-4 flex items-center gap-2">
@@ -899,6 +887,21 @@ async function loadVersionList() {
     // 没有 versions.json，给个 fallback 选项
     sel.innerHTML = `<option value="">analysis.json（默认）</option>`;
   }
+
+  updateVersionInfo();
+}
+
+// 版本栏信息：当前版本 + 共有几个版本
+function updateVersionInfo(currentId) {
+  const el = document.getElementById("version-info");
+  if (!el) return;
+  const available = (VERSIONS && VERSIONS.available) || [];
+  if (!available.length) {
+    el.textContent = "";
+    return;
+  }
+  const cur = currentId || VERSIONS.current || "";
+  el.textContent = `当前版本 ${cur} · 共 ${available.length} 个版本`;
 }
 
 async function switchDashboardVersion(versionId) {
@@ -911,6 +914,7 @@ async function switchDashboardVersion(versionId) {
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const data = await resp.json();
     applyNewData(data, `📂 已切换到版本 ${versionId}`);
+    updateVersionInfo(versionId);
   } catch (err) {
     alert("❌ 加载版本失败: " + err.message + "\n（可能需要先跑 prepare_data.py 生成这个版本）");
   }
@@ -935,6 +939,7 @@ function uploadJsonVersion(fileInput) {
       opt.textContent = `${vid} · 本地上传`;
       opt.selected = true;
       sel.appendChild(opt);
+      updateVersionInfo(vid);
     } catch (err) {
       alert("❌ JSON 解析失败: " + err.message);
     }
