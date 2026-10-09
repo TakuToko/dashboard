@@ -99,7 +99,7 @@ jobs:
         run: |
           gh issue comment ${{ github.event.issue.number }} \
             -R ${{ github.repository }} \
-            --body "✅ 采集完成，看板已重新部署。回到页面 Ctrl+F5 强刷即可看到新版本。"
+            --body "✅ 采集完成，看板部署已发起。注意：GitHub Pages 有最长约 10 分钟的 CDN 缓存，部署不会立刻在页面生效——请等 2~3 分钟后回页面 Ctrl+F5 强刷（或换成无痕窗口）查看新版本；若仍是旧数据，再等几分钟即可。"
           gh issue close ${{ github.event.issue.number }} -R ${{ github.repository }}
 
       - name: 回帖（失败）
