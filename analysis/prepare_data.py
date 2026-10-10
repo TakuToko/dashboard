@@ -348,13 +348,19 @@ def compute_player_persona(df):
             })
 
         # 文本反推标签分布
+        # 「正面评价 / 负面评价」是评价倾向，不是玩家身份/关注点，
+        # 与评分分布图重复表达，且会挤占标签榜名额 —— 不进入标签分布。
+        TENDENCY_TAGS = {"正面评价", "负面评价"}
         tag_counter = Counter()
         for text in gdf["评论内容"].tolist():
             for t in tag_user_by_text(text):
                 tag_counter[t] += 1
         tag_distribution = [
-            {"name": t, "value": int(c), "ratio": round(c / total * 100, 1)}
+            # category：前端据此分成「玩家身份」与「关注点」两组展示
+            {"name": t, "value": int(c), "ratio": round(c / total * 100, 1),
+             "category": "关注点" if t.startswith("关注") else "身份"}
             for t, c in tag_counter.most_common(20)
+            if t not in TENDENCY_TAGS
         ]
 
         result[game] = {
@@ -392,11 +398,14 @@ def compute_data_compare(data):
         return f"{items[0]['phrase']}（{items[0]['ratio']}）" if items else "—"
 
     rows = [
-        ["TapTap 官方评分", *[f"{app_stats.get(g, {}).get('rating', 0)}/10" for g in games]],
+        # 两条评分统一折算到 10 分制：否则 6.5/10 与 4.09/5 并排会被误读为「抽样低了 2~3 分」
+        ["TapTap 官方评分（全量加权）", *[f"{app_stats.get(g, {}).get('rating', 0)}/10" for g in games]],
+        ["本次抽样平均分（折算 10 分制）", *[f"{round(overview.get(g, {}).get('avg_score', 0) * 2, 1)}/10" for g in games]],
+        ["抽样口径",        *[f"热度 Top{overview.get(g, {}).get('review_count', 0)} 简单平均"
+                              for g in games]],
         ["官方下载量",      *[_w(app_stats.get(g, {}).get("download_count", 0)) for g in games]],
         ["官方关注数",      *[_w(app_stats.get(g, {}).get("follow_count", 0)) for g in games]],
         ["本次抽样评论量",  *[f"{overview.get(g, {}).get('review_count', 0)} 条" for g in games]],
-        ["抽样平均分",      *[f"{overview.get(g, {}).get('avg_score', 0)}/5" for g in games]],
         ["5星 / 1星 占比",  *[f"{overview.get(g, {}).get('5star_ratio', 0)}% / {overview.get(g, {}).get('1star_ratio', 0)}%"
                               for g in games]],
         ["差评 Top1 原因",  *[_top_phrase(g, "negative") for g in games]],
@@ -434,28 +443,31 @@ def attach_stage_phrases(df, data):
         contents = gdf["评论内容"].astype(str).str.lower()
         total = len(gdf)
 
-        # 差评/好评短语合并成一张候选表（阶段不区分好评差评，只看"被提及"）
-        phrases = list(kinds.get("negative", [])) + list(kinds.get("positive", []))
+        # 差评/好评短语合并成一张候选表（阶段内不区分好评差评，只看"被提及"）
+        # 保留 polarity：前端据此把该阶段话题分成「不满」与「认可」两组展示
+        phrases = ([(p, "negative") for p in kinds.get("negative", [])] +
+                   [(p, "positive") for p in kinds.get("positive", [])])
         phrase_masks = []
-        for p in phrases:
+        for p, polarity in phrases:
             aliases = [a for a in dict.fromkeys([p["phrase"]] + p.get("aliases", [])) if len(a) >= 2]
             matcher = _prepare_matcher(aliases, [k for k in p.get("keywords", []) if len(k) >= 2])
             mask = contents.apply(lambda t: _hit(t, matcher))
             if mask.sum() == 0:
                 continue
-            phrase_masks.append((p["phrase"], mask, float(mask.sum()) / total))
+            phrase_masks.append((p["phrase"], polarity, mask, float(mask.sum()) / total))
 
         for s in stages:
             in_stage = gdf["阶段分组"] == s["stage"]
             n_stage = int(in_stage.sum())
             rows = []
-            for phrase, mask, overall_ratio in phrase_masks:
+            for phrase, polarity, mask, overall_ratio in phrase_masks:
                 n_hit = int((mask & in_stage).sum())
                 if n_hit < STAGE_PHRASE_MIN_HITS or overall_ratio <= 0:
                     continue
                 stage_ratio = n_hit / n_stage if n_stage else 0
                 rows.append({
                     "phrase": phrase,
+                    "polarity": polarity,
                     "count": n_hit,
                     "ratio": f"{round(stage_ratio * 100, 1)}%",
                     "lift": round(stage_ratio / overall_ratio, 1),
@@ -660,16 +672,17 @@ def analyze_insights(df, data):
             # 结论：核心受众是谁
             ip_ratio = tags.get("王者IP老粉", 0)
             aosj_ratio = tags.get("自走棋老手", 0)
-            lol_ratio = persona.get(jcc, {}).get("tag_distribution", [{}])[0].get("ratio", 0) if persona.get(jcc) else 0
+            # 必须按标签名显式取：金铲铲标签榜首位是「关注平衡/数值」，取 [0] 会把它误当成 LOL 老玩家占比
+            jcc_tags = {t["name"]: t["ratio"] for t in (persona.get(jcc, {}).get("tag_distribution") or [])}
+            lol_ratio = jcc_tags.get("LOL老玩家", 0)
             if ip_ratio > 0:
                 insights.append({
                     "dimension": "受众画像", "target": "王者万象棋",
-                    "title": f"核心受众：王者 IP 老粉（{ip_ratio}%）",
+                    "title": f"核心受众是王者 IP 老粉（{ip_ratio}%）",
                     "search_query": "王者 荣耀 情怀",
                     "severity": "info",
-                    "detail": f"万象棋评论者中 {ip_ratio}% 提到「王者/荣耀/情怀」，"
-                              f"{aosj_ratio}% 是自走棋老手。"
-                              f"相比金铲铲 LOL 老玩家占 {lol_ratio}%，说明万象棋**受众更多来自王者 IP 圈层**，而非纯自走棋玩家。",
+                    "detail": f"万象棋评论者中 {ip_ratio}% 提到王者/荣耀/情怀，{aosj_ratio}% 是自走棋老手；"
+                              f"金铲铲侧 LOL 老玩家占 {lol_ratio}%。万象棋受众更偏王者 IP 圈层。",
                     "evidence": {
                         "field": "player_persona.tag_distribution",
                         "metrics": [{"k": "王者IP老粉", "v": f"{ip_ratio}%"}, 
@@ -683,15 +696,16 @@ def analyze_insights(df, data):
             expect_ratio = stages.get("期待者", {}).get("ratio", 0)
             deep_ratio = stages.get("深度 (>50h)", {}).get("ratio", 0)
             newbie_ratio = stages.get("新手 (<10h)", {}).get("ratio", 0)
+            mid_ratio = stages.get("中级 (10-50h)", {}).get("ratio", 0)
             if expect_ratio > 0 or deep_ratio > 0:
                 insights.append({
                     "dimension": "首发特征", "target": "王者万象棋",
-                    "title": f"首发期口碑未沉淀：深度玩家仅 {deep_ratio}%",
+                    "title": f"深度玩家占比偏低（{deep_ratio}%）",
                     "search_query": "老玩家 深度 新手",
                     "severity": "warning",
-                    "detail": f"万象棋上线仅 {p.get('lifecycle', {}).get('days_since_launch', '?')} 天。"
-                              f"评论者构成：期待者 {expect_ratio}% + 新手 {newbie_ratio}% + 中级 + 深度 {deep_ratio}%。"
-                              f"⚠️ 深度玩家占比低意味着**口碑还未经过社区考验**，未来可能出现评分分化。",
+                    "detail": f"万象棋上线 {p.get('lifecycle', {}).get('days_since_launch', '?')} 天。"
+                              f"评论者构成：期待者 {expect_ratio}%、新手 {newbie_ratio}%、"
+                              f"中级 {mid_ratio}%、深度 {deep_ratio}%。口碑尚未经过深度玩家检验。",
                     "evidence": {
                         "field": "player_persona.stage_stats",
                         "metrics": [{"k": "期待者", "v": f"{expect_ratio}%"},
@@ -727,15 +741,15 @@ def analyze_insights(df, data):
             if neg_phrases:
                 # —— 走 LLM 短语：具体归因（如「阵容与棋手绑定过深」）+ 真实占比 ——
                 top_neg = neg_phrases[:3]
+                top_neg_plain = [x["phrase"] for x in top_neg]
                 top_neg_names = [f"{x['phrase']}（占差评 {x['ratio']}）" for x in top_neg]
                 insights.append({
                     "dimension": "核心痛点", "target": game_name,
-                    "title": f"「{pain_tag.replace('关注', '')}」集中爆发（{pain_ratio}% 提及）",
+                    "title": f"「{pain_tag.replace('关注', '')}」提及率 {pain_ratio}%",
                     "search_query": f"{sq} " + " ".join(x["phrase"] for x in top_neg[:2]),
                     "severity": severity_label,
-                    "detail": f"{game_name}有 {pain_ratio}% 的评论直接提到「{pain_tag}」。"
-                              f"最热门差评归纳出的 Top 3 不满原因：{'；'.join(top_neg_names)}。"
-                              f"这是当前玩家不满的**最大根源**。",
+                    "detail": f"{game_name} {pain_ratio}% 的评论提到「{pain_tag}」，"
+                              f"热门差评的 Top 3 原因：{'；'.join(top_neg_plain)}。",
                     "evidence": {
                         "field": "llm_phrases.negative（LLM 归纳短语 + 规则引擎锚定占比）",
                         "metrics": [{"k": pain_tag, "v": f"{pain_ratio}%"},
@@ -753,12 +767,11 @@ def analyze_insights(df, data):
                 top_neg2 = words_neg_clean[1]["name"] if len(words_neg_clean) > 1 else (words_neg_clean[0]["name"] if len(words_neg_clean) == 1 else "—")
                 insights.append({
                     "dimension": "核心痛点", "target": game_name,
-                    "title": f"「{pain_tag.replace('关注', '')}」集中爆发（{pain_ratio}% 提及）",
+                    "title": f"「{pain_tag.replace('关注', '')}」提及率 {pain_ratio}%",
                     "search_query": f"{sq} {top_neg} {top_neg2}",
                     "severity": severity_label,
-                    "detail": f"{game_name}有 {pain_ratio}% 的评论直接提到「{pain_tag}」。"
-                              f"差评高频词 Top 2：「{top_neg}」、「{top_neg2}」。"
-                              f"这是当前玩家不满的**最大根源**。",
+                    "detail": f"{game_name} {pain_ratio}% 的评论提到「{pain_tag}」，"
+                              f"差评高频词 Top 2：{top_neg}、{top_neg2}。",
                     "evidence": {
                         "field": "player_persona + word_freq",
                         "metrics": [{"k": pain_tag, "v": f"{pain_ratio}%"},
@@ -771,14 +784,14 @@ def analyze_insights(df, data):
         if pos_phrases:
             # —— 走 LLM 短语：玩家认可的具体原因 ——
             top_pos = pos_phrases[:3]
+            top_pos_plain = [x["phrase"] for x in top_pos]
             top_pos_names = [f"{x['phrase']}（占好评 {x['ratio']}）" for x in top_pos]
             insights.append({
                 "dimension": "正面反馈", "target": game_name,
-                "title": f"玩家最认可：「{top_pos[0]['phrase']}」",
+                "title": f"最受认可：{top_pos[0]['phrase']}",
                 "search_query": top_pos[0]["phrase"],
                 "severity": "info",
-                "detail": f"{game_name}好评最集中的 Top 3 原因：{'；'.join(top_pos_names)}。"
-                          f"这是玩家选择/留在这款游戏的**核心理由**。",
+                "detail": f"{game_name}好评最集中的 Top 3 原因：{'；'.join(top_pos_plain)}。",
                 "evidence": {
                     "field": "llm_phrases.positive（LLM 归纳短语 + 规则引擎锚定占比）",
                     "metrics": [{"k": "好评Top3原因", "v": top_pos_names}],
@@ -797,11 +810,10 @@ def analyze_insights(df, data):
             )
             insights.append({
                 "dimension": "正面反馈", "target": game_name,
-                "title": f"玩家最认可：「{top_pos}」",
+                "title": f"最受认可：{top_pos}",
                 "search_query": f"{top_pos} {top_pos2}",
                 "severity": "info",
-                "detail": f"{game_name}正面评论高频词 Top 3：{top_pos}、{top_pos2}、{top_pos3}。"
-                          f"这是玩家选择/留在这款游戏的**核心理由**。",
+                "detail": f"{game_name}正面评论高频词 Top 3：{top_pos}、{top_pos2}、{top_pos3}。",
                 "evidence": {
                     "field": "word_freq.positive",
                     "metrics": [{"k": "正面Top3", "v": [top_pos, top_pos2, top_pos3]}],
@@ -826,16 +838,15 @@ def analyze_insights(df, data):
         "title": f"金铲铲深度玩家 {jcc_deep}% vs 万象棋 {wzq_deep}%",
         "search_query": "老玩家 匹配 ELO 公平",
         "severity": "medium",
-        "detail": f"金铲铲运营 5 年，深度玩家（>50h）占评论者的 {jcc_deep}%，"
-                  f"平均评分稳定在 {jcc_avg} 分。万象棋深度玩家仅 {wzq_deep}%，"
-                  f"当前平均 {wzq_avg} 分。"
-                  f"💡 借鉴：金铲铲的匹配公平性维护 + 反作弊投入"
-                  f"是老玩家留存的关键。万象棋首发期需避免重蹈金铲铲早期老玩家流失的覆辙。",
+        # 评分统一折算到 10 分制，避免与对比表里的 /10 口径并排时被误读
+        "detail": f"金铲铲运营 5 年，深度玩家（>50h）占 {jcc_deep}%，抽样平均 {round(jcc_avg * 2, 1)}/10；"
+                  f"万象棋深度玩家 {wzq_deep}%，抽样平均 {round(wzq_avg * 2, 1)}/10。"
+                  f"金铲铲的匹配公平性维护与反作弊投入，是其老玩家留存的关键。",
         "evidence": {
             "field": "player_persona + overview",
             "metrics": [{"k": f"{wzq} 深度", "v": f"{wzq_deep}%"},
                         {"k": f"{jcc} 深度", "v": f"{jcc_deep}%"},
-                        {"k": f"{jcc} 平均分", "v": f"{jcc_avg}"}],
+                        {"k": f"{jcc} 抽样平均", "v": f"{round(jcc_avg * 2, 1)}/10"}],
             "sample_reviews": _samples(jcc, stages=["深度"], limit=3) + _samples(wzq, stages=["深度"], limit=2),
         }
     })
@@ -846,11 +857,11 @@ def analyze_insights(df, data):
         jcc_official = app_stats[jcc].get("rating", 0)
         insights.append({
             "dimension": "数据交叉验证", "target": "王者万象棋",
-            "title": f"官方评分 vs 抽样评分",
+            "title": f"官方评分与抽样评分的口径对比",
             "severity": "info",
-            "detail": f"万象棋 TapTap 官方评分 {wzq_official}/10，抽样评论平均分 {wzq_avg}/5 (×2={wzq_avg*2})。"
-                      f"金铲铲官方 {jcc_official}/10，抽样 {jcc_avg}/5 (×2={jcc_avg*2})。"
-                      f"⚠️ 官方评分是加权平均（热门评论权重高），我们是简单平均，差异属正常。",
+            "detail": f"万象棋官方评分 {wzq_official}/10（全量加权），抽样平均分 {round(wzq_avg * 2, 1)}/10"
+                      f"（热度 Top500 简单平均）；金铲铲官方 {jcc_official}/10，抽样 {round(jcc_avg * 2, 1)}/10。"
+                      f"两者口径不同（全量加权 vs 热度抽样），不可直接比较高低。",
             "evidence": {
                 "field": "app_stats + overview",
                 "metrics": [{"k": f"{wzq} 官方", "v": f"{wzq_official}/10"},
@@ -863,14 +874,28 @@ def analyze_insights(df, data):
     # —— 研究目标 4：行动建议（规则化）——
     recommendations = []
     pain_item = next((i for i in insights if i["dimension"] == "核心痛点" and i["target"] == wzq), None)
+    # 建议标题/动作必须与真实痛点口径一致，
+    # 否则会出现「标题讲平衡、正文讲阵容、动作讲 ELO」的错位。
+    PAIN_ACTION_MAP = {
+        "ELO/控牌":   ("优先缓解匹配公平性争议", "公开匹配规则与分档胜率分布，降低「被控牌」的感知"),
+        "外挂/脚本":  ("优先加强反作弊处置", "提升外挂识别与举报处置时效，公示处罚结果"),
+        "服务器/技术": ("优先修复稳定性问题", "针对闪退、卡屏、掉线做专项修复并周更跟进"),
+        "平衡/数值":  ("优先处理平衡与数值问题", "针对被集中吐槽的阵容与棋手强度做数值回调，并公示调整依据"),
+    }
     if pain_item and pain_item.get("severity") == "high":
+        # 从证据锚点里取真实痛点标签（如「关注平衡/数值」→「平衡/数值」）
+        pain_label = next((m["k"].replace("关注", "")
+                           for m in pain_item.get("evidence", {}).get("metrics", [])
+                           if m.get("k", "").startswith("关注")), "核心痛点")
+        rec_title, rec_action = PAIN_ACTION_MAP.get(
+            pain_label, (f"优先处理{pain_label}问题", "按差评归因确定迭代优先级"))
         recommendations.append({
             "priority": "P0 紧急", "icon": "🔴", "target": wzq,
             "from_dimension": "核心痛点",   # 供首屏「核心发现」摘要回链对应结论
-            "title": "优先修复 ELO 匹配算法",
-            "action": "引入玩家真实水平评估（近 10 场胜率）替代纯胜率匹配",
+            "title": rec_title,
+            "action": rec_action,
             "rationale": pain_item["detail"],
-            "success_metric": "目标：差评中 ELO 相关占比降至 < 10%",
+            "success_metric": f"目标：差评中「{pain_label}」相关占比降至 < 10%",
         })
 
     audience_item = next((i for i in insights if i["dimension"] == "受众画像" and i["target"] == wzq), None)
@@ -921,8 +946,8 @@ def analyze_insights(df, data):
             item["mirror"] = ("万象棋应在首发期就把「匹配公平 + 反作弊」当作留存基建投入，"
                               "而不是等深度玩家流失后再补救。")
         elif item["dimension"] == "数据交叉验证":
-            item["mirror"] = ("抽样口径与官方口径趋势一致，说明本次样本具备代表性，"
-                              "两条口径下的结论都可作为决策依据。")
+            item["mirror"] = ("抽样是热度 Top500 的简单平均，官方是全量加权，两者口径不同，"
+                              "仅作交叉参考，不作为评分高低的依据。")
         elif item["dimension"] == "核心痛点" and _wzq_pain:
             item["title"] = f"竞品镜鉴：{item['title']}"
             item["mirror"] = ("同类问题万象棋当前提及率低于金铲铲，但金铲铲运营 5 年仍未消化 —— "
@@ -941,12 +966,13 @@ def analyze_insights(df, data):
     }
 
 
-def _build_key_findings(insights, recommendations, top_n=4):
+def _build_key_findings(insights, recommendations, top_n=3):
     """
     生成首屏「核心发现」摘要。
 
     只取 main 组（万象棋主线），按严重度降序排，每条尽量回链到对应的行动建议。
     —— 报告改成漏斗式（结论在最末）后，摘要让决策者不必滚到底就能看到结论。
+    —— 控制在 3 条：一屏读完，更多细节留给模块 ⑤ 的完整结论。
     """
     SEV_RANK = {"high": 0, "warning": 1, "medium": 2, "info": 3}
     main_items = sorted([i for i in insights if i.get("group") == "main"],
@@ -988,8 +1014,8 @@ def _build_llm_context(data, insights, recommendations):
         lc = p.get("lifecycle", {})
         summary_lines.append(
             f"  {gn}（上线{lc.get('days_since_launch', '?')}天，{lc.get('stage', '')}）: "
-            f"官方评分 {ps.get('rating', 0)}/10, "
-            f"抽样平均分 {o.get('avg_score', 0)}/5, "
+            f"官方评分 {ps.get('rating', 0)}/10（全量加权）, "
+            f"抽样平均分 {round(o.get('avg_score', 0) * 2, 1)}/10（热度 Top{o.get('review_count', 0)} 简单平均）, "
             f"评论 {o.get('review_count', 0)} 条"
         )
 
