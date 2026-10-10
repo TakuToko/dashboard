@@ -58,6 +58,8 @@ from config import (
     INSIGHT_NOISE_WORDS, # 🆕 规则引擎专用二次过滤词（词云不过滤）
     DOMAIN_WORDS,        # jieba 领域词典
     USER_TAG_RULES,      # 用户标签规则
+    IP_IDENTITY_TAGS,    # IP 身份标签（需按游戏限定归属）
+    GAME_IP_ALLOWED,     # 各游戏允许的 IP 身份标签
     MECHANIC_COMPARE,    # 竞品机制对比表
     STAGE_PHRASE_MIN_HITS,  # 🆕 阶段×原因短语矩阵：最小命中数
     STAGE_PHRASE_TOP_N,     # 🆕 阶段×原因短语矩阵：每阶段展示条数
@@ -351,9 +353,13 @@ def compute_player_persona(df):
         # 「正面评价 / 负面评价」是评价倾向，不是玩家身份/关注点，
         # 与评分分布图重复表达，且会挤占标签榜名额 —— 不进入标签分布。
         TENDENCY_TAGS = {"正面评价", "负面评价"}
+        # IP 身份标签按游戏限定：避免竞品名（如「王者万象棋」含「王者」）误命中对方 IP 标签
+        allowed_ip = GAME_IP_ALLOWED.get(game, set())
         tag_counter = Counter()
         for text in gdf["评论内容"].tolist():
             for t in tag_user_by_text(text):
+                if t in IP_IDENTITY_TAGS and t not in allowed_ip:
+                    continue
                 tag_counter[t] += 1
         tag_distribution = [
             # category：前端据此分成「玩家身份」与「关注点」两组展示
@@ -672,9 +678,9 @@ def analyze_insights(df, data):
             # 结论：核心受众是谁
             ip_ratio = tags.get("王者IP老粉", 0)
             aosj_ratio = tags.get("自走棋老手", 0)
-            # 必须按标签名显式取：金铲铲标签榜首位是「关注平衡/数值」，取 [0] 会把它误当成 LOL 老玩家占比
+            # 必须按标签名显式取：金铲铲标签榜首位是「关注平衡/数值」，取 [0] 会把它误当成英雄联盟IP老粉占比
             jcc_tags = {t["name"]: t["ratio"] for t in (persona.get(jcc, {}).get("tag_distribution") or [])}
-            lol_ratio = jcc_tags.get("LOL老玩家", 0)
+            lol_ratio = jcc_tags.get("英雄联盟IP老粉", 0)
             if ip_ratio > 0:
                 insights.append({
                     "dimension": "受众画像", "target": "王者万象棋",
@@ -682,12 +688,12 @@ def analyze_insights(df, data):
                     "search_query": "王者 荣耀 情怀",
                     "severity": "info",
                     "detail": f"万象棋评论者中 {ip_ratio}% 提到王者/荣耀/情怀，{aosj_ratio}% 是自走棋老手；"
-                              f"金铲铲侧 LOL 老玩家占 {lol_ratio}%。万象棋受众更偏王者 IP 圈层。",
+                              f"金铲铲侧英雄联盟 IP 老粉占 {lol_ratio}%。万象棋受众更偏王者 IP 圈层。",
                     "evidence": {
                         "field": "player_persona.tag_distribution",
                         "metrics": [{"k": "王者IP老粉", "v": f"{ip_ratio}%"}, 
                                     {"k": "自走棋老手", "v": f"{aosj_ratio}%"},
-                                    {"k": f"{jcc} LOL老玩家", "v": f"{lol_ratio}%"}],
+                                    {"k": f"{jcc} 英雄联盟IP老粉", "v": f"{lol_ratio}%"}],
                         "sample_reviews": _samples(wzq, tags=["王者IP老粉"], limit=5),
                     }
                 })

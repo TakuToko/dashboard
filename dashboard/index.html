@@ -327,13 +327,13 @@
 <section class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-6 fade-in">
   <!-- 万象棋 平均分（我们抽样） -->
   <div class="kpi-card p-6 text-center delay-100">
-    <div class="text-xs text-slate-400 mb-2 tracking-wider uppercase">王者万象棋 · 抽样均分</div>
+    <div class="text-xs text-slate-400 mb-2 tracking-wider uppercase">王者万象棋 · 抽样均分 <span class="text-slate-500">/10</span></div>
     <div id="kpi-wzq-score" class="text-4xl font-black glow-a num-animate">--</div>
     <div id="kpi-wzq-5star" class="text-xs text-slate-500 mt-2">5星占比 --%</div>
   </div>
   <!-- 金铲铲 平均分（我们抽样） -->
   <div class="kpi-card p-6 text-center delay-200">
-    <div class="text-xs text-slate-400 mb-2 tracking-wider uppercase">金铲铲之战 · 抽样均分</div>
+    <div class="text-xs text-slate-400 mb-2 tracking-wider uppercase">金铲铲之战 · 抽样均分 <span class="text-slate-500">/10</span></div>
     <div id="kpi-jcc-score" class="text-4xl font-black glow-b num-animate">--</div>
     <div id="kpi-jcc-5star" class="text-xs text-slate-500 mt-2">5星占比 --%</div>
   </div>
@@ -384,7 +384,7 @@
       </div>
       <!-- 抽样 vs 官方对比条 -->
       <div class="mt-4 pt-3 border-t border-slate-700/50">
-        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 抽样分</div>
+        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 抽样分（均为 10 分制）</div>
         <div class="flex gap-2 text-xs">
           <span id="app-wzq-compare" class="text-slate-400"></span>
         </div>
@@ -416,7 +416,7 @@
         </div>
       </div>
       <div class="mt-4 pt-3 border-t border-slate-700/50">
-        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 抽样分</div>
+        <div class="text-[10px] text-slate-500 mb-1">官方分 vs 抽样分（均为 10 分制）</div>
         <div class="flex gap-2 text-xs">
           <span id="app-jcc-compare" class="text-slate-400"></span>
         </div>
@@ -1285,8 +1285,9 @@ function renderAll() {
 // ---- 1. KPI ----
 function renderKPI() {
   const o = DATA.overview;
-  animateNum(document.getElementById("kpi-wzq-score"), o[GAME_A].avg_score, 2);
-  animateNum(document.getElementById("kpi-jcc-score"), o[GAME_B].avg_score, 2);
+  // 抽样均分统一折算为 10 分制（×2），与 TapTap 官方总分、竞品对标表口径一致
+  animateNum(document.getElementById("kpi-wzq-score"), o[GAME_A].avg_score * 2, 2);
+  animateNum(document.getElementById("kpi-jcc-score"), o[GAME_B].avg_score * 2, 2);
   animateNum(document.getElementById("kpi-wzq-count"), o[GAME_A].review_count, 0);
   animateNum(document.getElementById("kpi-jcc-count"), o[GAME_B].review_count, 0);
   document.getElementById("kpi-wzq-5star").textContent = `5星占比 ${o[GAME_A]["5star_ratio"]}%`;
@@ -1338,12 +1339,14 @@ function renderRatingDist() {
 // ---- 3. 玩家时长 vs 评分 ----
 function renderPlaytime(game, domId, color) {
   const d = DATA.playtime_score[game];
-  const scores = d.avg_scores.map(v => (v === null || v === undefined) ? null : v);
+  // 评分统一 10 分制：原始为 5 星制，×2 折算
+  const to10 = v => (v === null || v === undefined) ? null : +(v * 2).toFixed(2);
+  const scores = d.avg_scores.map(to10);
   let allBuckets = [...d.buckets];
   let allScores = [...scores];
   if (d.expect_score !== null) {
     allBuckets.push("期待者");
-    allScores.push(d.expect_score);
+    allScores.push(to10(d.expect_score));
   }
 
   echarts.init(document.getElementById(domId)).setOption({
@@ -1351,7 +1354,7 @@ function renderPlaytime(game, domId, color) {
     tooltip: { trigger: "axis", backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
     grid: { top: 45, left: 50, right: 30, bottom: 40 },
     xAxis: { type: "category", data: allBuckets, axisLabel: { color: TEXT_COLOR }, axisLine: { lineStyle: { color: AXIS_COLOR } } },
-    yAxis: { type: "value", min: 0, max: 5, name: "平均分", nameTextStyle: { color: TEXT_COLOR }, axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
+    yAxis: { type: "value", min: 0, max: 10, name: "平均分（/10）", nameTextStyle: { color: TEXT_COLOR }, axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
     series: [{
       type: "bar", data: allScores,
       itemStyle: {
@@ -1665,9 +1668,10 @@ function showPersona(which) {
     tooltip: { trigger: "axis", backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
     grid: { top: 50, left: 50, right: 30, bottom: 50 },
     xAxis: { type: "category", data: stages.map(s => s.stage), axisLabel: { color: TEXT_COLOR, fontSize: 10, rotate: 15 }, axisLine: { lineStyle: { color: AXIS_COLOR } } },
-    yAxis: { type: "value", min: 0, max: 5, name: "平均分", axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
+    yAxis: { type: "value", min: 0, max: 10, name: "平均分（/10）", axisLabel: { color: TEXT_COLOR }, splitLine: { lineStyle: { color: GRID_COLOR } } },
     series: [{
-      type: "bar", data: stages.map(s => s.avg_score),
+      // 评分统一 10 分制：原始 5 星制 ×2
+      type: "bar", data: stages.map(s => +(s.avg_score * 2).toFixed(2)),
       itemStyle: { color, borderRadius: [6, 6, 0, 0] },
       label: { show: true, position: "top", color: TEXT_BOLD, fontSize: 11, fontWeight: 600 },
       animationDuration: 1000
@@ -1776,7 +1780,7 @@ function showPersona(which) {
       <div class="p-4 rounded-xl border border-slate-700/40 bg-slate-800/25">
         <div class="flex items-center justify-between mb-2">
           <span class="font-semibold text-sm" style="color:${color}">${s.stage}</span>
-          <span class="text-xs text-slate-500">${s.count} 条 · 平均 ${s.avg_score} 分</span>
+          <span class="text-xs text-slate-500">${s.count} 条 · 平均 ${(s.avg_score * 2).toFixed(1)}/10</span>
         </div>
         ${(neg.length || pos.length)
           ? block("▲ 不满", neg, "#EF4444", "该阶段暂无明显不满（提及均 &lt;2）")
@@ -2484,11 +2488,13 @@ function renderAppStats() {
     // 抽样 vs 官方对比
     const o = overview[game];
     if (o && s.rating) {
-      const diff = (o.avg_score - s.rating).toFixed(2);
+      // 官方总分是 10 分制，抽样均分是 5 星制 → 抽样 ×2 折算后再比，避免口径错位得出「低 2~3 分」
+      const samp10 = o.avg_score * 2;
+      const diff = (samp10 - s.rating).toFixed(2);
       const sign = diff > 0 ? "↑" : diff < 0 ? "↓" : "≈";
       const cls = diff > 0 ? "text-emerald-400" : diff < 0 ? "text-rose-400" : "text-slate-400";
-      const txt = diff > 0 ? `抽样比官方高 ${Math.abs(diff)}` : 
-                  diff < 0 ? `抽样比官方低 ${Math.abs(diff)}` : `完全一致`;
+      const txt = diff > 0 ? `抽样 ${samp10.toFixed(2)}，比官方高 ${Math.abs(diff)}` : 
+                  diff < 0 ? `抽样 ${samp10.toFixed(2)}，比官方低 ${Math.abs(diff)}` : `抽样与官方一致（${samp10.toFixed(2)}）`;
       document.getElementById(`${dom_prefix}-compare`).innerHTML = 
         `<span class="${cls}">${sign} ${txt}</span>`;
     }
