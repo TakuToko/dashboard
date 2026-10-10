@@ -2642,7 +2642,13 @@ function setQuery(text) {
   doBM25Search();
 }
 
-function tokenizeQuery(raw) {
+// 查询切分：返回 { tokens, literals }
+//   tokens   —— 命中索引词典的词（走 BM25 打分）
+//   literals —— 整段都没命中索引的词（走原文包含匹配兜底）
+// 为什么需要 literals：索引只收录出现 >= 2 次的词，语料里从未出现的词（如"外挂""脚本"）
+// 或只出现 1 次的词不进索引；若直接丢弃，搜「金铲铲 外挂 脚本」实际只搜了"金铲铲"，
+// 界面却看不出另外两个词被忽略了。
+function splitQuery(raw) {
   // 浏览器里没法跑 jieba，用「索引词典 + 正向最大匹配」切词：
   // 索引里的词就是语料里真实存在的词，这样切出的 token 一定能对上文档 token，
   // 否则像"和金铲铲相比"会被整串当成一个词，任何一个文档都不含它 → 0 命中
@@ -2652,24 +2658,39 @@ function tokenizeQuery(raw) {
 
   const vocab = getBm25Vocab();
   const tokens = [];
+  const literals = [];
   segments.forEach(seg => {
+    const before = tokens.length;
     let i = 0;
     while (i < seg.length) {
-      let hit = "";
+      let hit = null, hitLen = 0;
       const maxL = Math.min(vocab.maxLen, seg.length - i);
       for (let L = maxL; L >= 2; L--) {          // 最长优先（正向最大匹配）
-        const cand = seg.slice(i, i + L);
-        if (vocab.set.has(cand)) { hit = cand; break; }
+        const forms = bm25TokenForms(seg.slice(i, i + L), vocab);
+        if (forms) { hit = forms; hitLen = L; break; }
       }
       if (hit) {
-        tokens.push(hit);
-        i += hit.length;
+        hit.forEach(t => tokens.push(t));
+        i += hitLen;
       } else {
         i += 1;                                   // 词典未收录 → 跳过该字，不产生噪声 token
       }
     }
+    // 整段一个索引词都没命中 → 记成字面词，检索时按原文包含匹配兜底
+    if (tokens.length === before) literals.push(seg);
   });
-  return tokens.filter(t => !STOP.has(t.toLowerCase()));
+  const keep = t => !STOP.has(t.toLowerCase());
+  return { tokens: tokens.filter(keep), literals: Array.from(new Set(literals.filter(keep))) };
+}
+
+// 候选串命中词典时，返回索引里**真实存在**的写法（数组，可能有多个）：
+// 英文/缩写的大小写写法在索引里是不同的 token（语料里同时存在 "ELO" 与 "elo"），
+// 只按用户输入的写法去查，会漏掉另一种写法的那一批评论 —— 所以全部召回。
+function bm25TokenForms(cand, vocab) {
+  if (/[A-Za-z]/.test(cand)) {
+    return vocab.lowerMap.get(cand.toLowerCase()) || null;
+  }
+  return vocab.set.has(cand) ? [cand] : null;
 }
 
 // 查询分词用的词典（惰性构建：直接用索引里出现 >= 2 次的词；切换数据版本自动重建）
@@ -2680,7 +2701,16 @@ function getBm25Vocab() {
   const set = new Set(Object.keys(idf));
   let maxLen = 2;
   set.forEach(w => { if (w.length > maxLen) maxLen = w.length; });
-  _bm25Vocab = { set, maxLen: Math.min(maxLen, 8) };
+  // 大小写归一：同一批英文词的不同写法在索引里是不同 token（"ELO" / "elo"），
+  // 建一份「小写 → 索引里所有真实写法」的映射，查询时一并召回，避免漏掉另一半评论。
+  const lowerMap = new Map();
+  set.forEach(w => {
+    if (!/[A-Za-z]/.test(w)) return;
+    const k = w.toLowerCase();
+    if (!lowerMap.has(k)) lowerMap.set(k, []);
+    lowerMap.get(k).push(w);
+  });
+  _bm25Vocab = { set, lowerMap, maxLen: Math.min(maxLen, 8) };
   _bm25VocabSrc = idf;
   return _bm25Vocab;
 }
@@ -2691,8 +2721,10 @@ function bm25Score(queryTokens, doc, idf, avgdl) {
   const tf = doc.tf || {};
   const dl = doc.dl || 0;
   const denom_base = BM25_K1 * (1 - BM25_B + BM25_B * (dl / (avgdl || 1)));
-  for (const q of queryTokens) {
-    const tftd = tf[q] || 0;
+  for (const q of new Set(queryTokens)) {   // 大小写变体可能指向同一条评论，去重避免重复计分
+    let tftd = tf[q] || 0;
+    // 索引里的 tf 只保留了该文档 Top50 词，低频词会被截断 → 用 tokens 兜底记 1 次
+    if (tftd === 0 && (doc.tokens || []).indexOf(q) >= 0) tftd = 1;
     if (tftd === 0) continue;              // 查询词不在该文档 → 跳过
     const idfVal = idf[q] || 0;            // 0 = 稀有词，不计分
     if (idfVal === 0) continue;
@@ -2741,27 +2773,43 @@ async function doBM25Search() {
 
   const avgdl = bm25.avgdl;
   const idf = bm25.idf || {};
-  let queryTokens = tokenizeQuery(qInput);
+  // 索引内词走 BM25；未收录词（语料里没出现/只出现 1 次）走原文包含匹配兜底
+  const _split = splitQuery(qInput);
+  let queryTokens = _split.tokens;
+  const literals = _split.literals;
+  const litLower = literals.map(s => s.toLowerCase());
 
-  // 如果用户没分词，尝试当作一个整体匹配（比如 "ELO控牌"）
-  if (queryTokens.length === 0) queryTokens = [qInput];
+  // 如果一个索引词都没切出来，整串当作词去匹配（比如用户只输入了一个生僻词）
+  if (queryTokens.length === 0 && literals.length === 0) queryTokens = [qInput];
 
   // 过滤器
   const fGame = document.getElementById("bm25-filter-game").value;
   const fScore = document.getElementById("bm25-filter-score").value;
+  const passFilter = doc => {
+    if (fGame && doc.game !== fGame) return false;
+    if (fScore === "low" && doc.score > 2) return false;
+    if (fScore === "high" && doc.score < 4) return false;
+    if (fScore && !isNaN(parseInt(fScore)) && doc.score !== parseInt(fScore)) return false;
+    return true;
+  };
 
-  let scored = bm25.reviews
-    .filter(doc => {
-      if (fGame && doc.game !== fGame) return false;
-      if (fScore === "low" && doc.score > 2) return false;
-      if (fScore === "high" && doc.score < 4) return false;
-      if (fScore && !isNaN(parseInt(fScore)) && doc.score !== parseInt(fScore)) return false;
-      return true;
+  let ranked = bm25.reviews
+    .filter(passFilter)
+    .map(doc => {
+      const content = (doc.content || "").toLowerCase();
+      return {
+        doc,
+        score: bm25Score(queryTokens, doc, idf, avgdl),
+        litHit: litLower.filter(l => content.includes(l)).length,  // 命中的未收录词个数
+      };
     })
-    .map(doc => ({ doc, score: bm25Score(queryTokens, doc, idf, avgdl) }))
-    .filter(x => x.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+    .filter(x => x.score > 0 || x.litHit > 0)
+    // 先按未收录词命中数，再按 BM25 分数，最后按点赞数（纯字面兜底时 BM25 全为 0）
+    .sort((a, b) => (b.litHit - a.litHit) || (b.score - a.score) || ((b.doc.ups || 0) - (a.doc.ups || 0)));
+
+  // 未收录词在语料里是否真的有命中（用于提示：标了"无命中"就不是检索出错，是语料本身没有）
+  const litTotal = ranked.filter(x => x.litHit > 0).length;
+  let scored = ranked.slice(0, 10);
 
   // 兜底：BM25 零命中时按原串做子串匹配。
   // 用户常把评论里的一句话整段复制来搜（如"和金铲铲相比"），
@@ -2795,9 +2843,17 @@ async function doBM25Search() {
   // 渲染
   container.classList.remove("hidden");
   document.getElementById("bm25-count").textContent = `· 找到 ${scored.length} 条相关评论`;
+  // 未收录词（索引里没有的词）要单独说明，并标注语料中是否真有命中 ——
+  // 像"外挂""脚本"在全量语料里出现 0 次，标出来才不会被误认为"搜索坏了"
+  const literalNote = literals.length
+    ? `未收录词(原文匹配): [${literals.join(", ")}]${litTotal ? ` 命中 ${litTotal} 条` : " 语料中无命中，已仅按其余词检索"}`
+    : "";
   document.getElementById("bm25-score-note").textContent = fallbackMode
     ? `原句子串匹配（BM25 未命中，已回落为字面包含匹配）| 查询: [${qInput}]`
-    : `BM25 (k1=${BM25_K1}, b=${BM25_B}) | 查询词: [${queryTokens.join(", ")}]`;
+    : [
+        queryTokens.length ? `BM25 (k1=${BM25_K1}, b=${BM25_B}) | 查询词: [${Array.from(new Set(queryTokens)).join(", ")}]` : "",
+        literalNote,
+      ].filter(Boolean).join(" | ");
 
   if (scored.length === 0) {
     listEl.innerHTML = `<div class="text-center py-6 text-slate-500">😢 没有找到相关评论，试试换个关键词？</div>`;
@@ -2805,10 +2861,11 @@ async function doBM25Search() {
   }
 
   const COLOR_MAP = { GAME_A: COLOR_A, GAME_B: COLOR_B };
+  const highlightTerms = Array.from(new Set(queryTokens.concat(literals)));
   listEl.innerHTML = scored.map(({ doc, score }) => {
     const color = doc.game === GAME_A ? COLOR_A : COLOR_B;
     const stars = "⭐".repeat(doc.score);
-    const scorePct = fallbackMode ? 100 : Math.min(100, Math.round(score / (scored[0].score || 1) * 100));
+    const scorePct = (fallbackMode || !scored[0].score) ? 100 : Math.min(100, Math.round(score / scored[0].score * 100));
     return `
       <div class="review-card p-4 hover:scale-[1.01] transition-transform cursor-pointer">
         <div class="flex items-center justify-between mb-2 text-xs">
@@ -2826,7 +2883,7 @@ async function doBM25Search() {
               style="background:${color}20; color:${color}">${fallbackMode ? "原句匹配" : `BM25 ${scorePct}%`}</span>
           </div>
         </div>
-        <div class="text-slate-200 text-sm leading-relaxed">${highlight(doc.content, queryTokens)}</div>
+        <div class="text-slate-200 text-sm leading-relaxed">${highlight(doc.content, highlightTerms)}</div>
       </div>
     `;
   }).join("");
