@@ -134,6 +134,9 @@
 
 <main class="max-w-[1440px] mx-auto px-6 pb-16 relative z-10">
 
+<!-- 首屏加载状态：数据没到位时给出明确提示，避免网络失败时整页静默空白 -->
+<div id="load-state" class="glass p-8 mb-6 text-center text-sm text-slate-400">⏳ 正在加载数据…</div>
+
 <!-- ==================== ⭐ 核心发现（首屏摘要） ==================== -->
 <!-- 报告改为漏斗式（核心结论在末位）后，摘要让决策者不必滚到底就能看到结论 -->
 <section id="key-findings" class="glass p-6 mb-6 fade-in reveal">
@@ -863,6 +866,95 @@ let DATA = null;
 let VERSIONS = null;  // 版本清单
 
 // ============================================================
+// 🆕 网络请求与加载状态
+// 背景：GitHub Pages 在部分网络下对 1MB 以上文件会低速或被重置，
+//      单纯 await fetch 一旦失败就是静默空白页，所以统一加超时 + 重试 + 可见提示。
+// ============================================================
+
+/** 带超时与重试的 JSON 请求（超时用 AbortController 覆盖到响应体读完为止） */
+async function fetchJson(url, { retries = 2, timeoutMs = 20000 } = {}) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, { signal: ctrl.signal });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      return await resp.json();
+    } catch (err) {
+      lastErr = err.name === "AbortError" ? new Error(`请求超时（${Math.round(timeoutMs / 1000)}s）`) : err;
+      if (attempt < retries) await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+
+/** 首屏加载状态条：loading / error / hidden */
+function showLoadState(kind, msg = "") {
+  const el = document.getElementById("load-state");
+  if (!el) return;
+  if (kind === "hidden") { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  if (kind === "error") {
+    el.innerHTML =
+      `<div class="text-rose-300">❌ 数据加载失败：${_esc(msg)}</div>
+       <div class="text-slate-500 text-xs leading-relaxed mt-1.5">
+         常见原因是网络到 GitHub Pages 不稳定或下载超时（数据文件较大）。<br>
+         可点下方重试；若持续失败，请换个网络或稍后再试。
+       </div>
+       <button onclick="refreshVersions()" class="mt-3 px-4 py-1.5 rounded-lg text-xs"
+         style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">🔄 重试</button>`;
+  } else {
+    el.textContent = `⏳ ${msg}`;
+  }
+}
+
+// ============================================================
+// 🆕 检索语料（bm25.reviews）懒加载
+// 主 JSON 只带 idf/avgdl/total_docs（约 100KB），语料单独放 bm25_{版本}.json（2MB+）。
+// 只有「检索区搜索」和「点样本展开原文」才需要它，首屏不下载。
+// ============================================================
+let BM25_REVIEWS = null;     // 已加载的评论语料
+let BM25_PROMISE = null;     // 进行中的请求（并发去重）
+let BM25_LOAD_ERROR = null;  // 上次失败原因
+
+function resetBm25Cache() {
+  BM25_REVIEWS = null;
+  BM25_PROMISE = null;
+  BM25_LOAD_ERROR = null;
+}
+
+function ensureBm25Reviews() {
+  // 1) 已经是完整数据（旧版本 JSON 或用户上传的文件自带 reviews）
+  const inline = DATA?.bm25?.reviews;
+  if (BM25_REVIEWS) return Promise.resolve(BM25_REVIEWS);
+  if (inline && inline.length) { BM25_REVIEWS = inline; return Promise.resolve(BM25_REVIEWS); }
+  if (BM25_PROMISE) return BM25_PROMISE;   // 2) 已有请求在飞
+
+  const vid = DATA?.version_id;
+  const primary = vid ? `analyses/bm25_${vid}.json?t=${Date.now()}` : null;
+  const fallback = `bm25.json?t=${Date.now()}`;
+
+  BM25_LOAD_ERROR = null;
+  BM25_PROMISE = (primary ? fetchJson(primary, { retries: 2, timeoutMs: 60000 }) : Promise.reject(new Error("缺少版本号")))
+    .catch(() => fetchJson(fallback, { retries: 1, timeoutMs: 60000 }))
+    .then(data => {
+      BM25_REVIEWS = data.reviews || [];
+      if (DATA?.bm25) DATA.bm25.reviews = BM25_REVIEWS;
+      console.log(`🔎 检索语料已加载：${BM25_REVIEWS.length} 条`);
+      return BM25_REVIEWS;
+    })
+    .catch(err => {
+      BM25_LOAD_ERROR = err.message;
+      BM25_PROMISE = null;   // 允许下次重试
+      throw new Error("检索索引加载失败：" + err.message);
+    });
+  return BM25_PROMISE;
+}
+
+// ============================================================
 // 🆕 知识库版本管理（下拉框切换 + FileReader 上传）
 // ============================================================
 
@@ -908,15 +1000,17 @@ async function switchDashboardVersion(versionId) {
   if (!versionId) return;
   // 读 localStorage 的偏好
   localStorage.setItem("taptap_dashboard_version", versionId);
-  
+
   try {
-    const resp = await fetch(`analyses/analysis_${versionId}.json?t=${Date.now()}`);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const data = await resp.json();
+    showLoadState("loading", `正在切换到版本 ${versionId}…`);
+    const data = await fetchJson(`analyses/analysis_${versionId}.json?t=${Date.now()}`,
+                                { retries: 1, timeoutMs: 30000 });
     applyNewData(data, `📂 已切换到版本 ${versionId}`);
     updateVersionInfo(versionId);
+    showLoadState("hidden");
+    ensureBm25Reviews().catch(err => console.warn("🔎 检索语料预取失败：", err.message));
   } catch (err) {
-    alert("❌ 加载版本失败: " + err.message + "\n（可能需要先跑 prepare_data.py 生成这个版本）");
+    showLoadState("error", err.message);
   }
 }
 
@@ -927,11 +1021,13 @@ function uploadJsonVersion(fileInput) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      if (!data.bm25 || !data.overview) {
-        throw new Error("缺少 bm25 / overview 字段，不是有效的 analysis.json");
+      // bm25.reviews 已拆到独立文件，上传的文件里可以只有轻量 bm25 存根
+      if (!data.overview) {
+        throw new Error("缺少 overview 字段，不是有效的 analysis.json");
       }
       const vid = data.version_id || file.name.replace(/\.json$/, "") || "uploaded";
       applyNewData(data, `📤 已上传 ${file.name}（${vid}）`);
+      showLoadState("hidden");
       // 加到下拉框里（仅本次会话）
       const sel = document.getElementById("version-select");
       const opt = document.createElement("option");
@@ -1029,6 +1125,7 @@ function renderVersionMeta(data) {
 
 function applyNewData(data, toastMsg) {
   DATA = data;
+  resetBm25Cache();   // 换了版本/上传了新文件，检索语料缓存作废
   console.log("✅ 数据已更新", Object.keys(data));
   renderAll();
   // 顶部小 toast 提示
@@ -1056,64 +1153,84 @@ function showToast(msg) {
  */
 async function loadDefaultData(successMsg) {
   const TS = Date.now();
+  showLoadState("loading", "正在加载数据…");
 
-  // 决定首选版本：localStorage > versions.current > 可用列表第一个
-  let preferredVersion = localStorage.getItem("taptap_dashboard_version");
-  if (!preferredVersion && VERSIONS?.current) {
-    preferredVersion = VERSIONS.current;
-  }
-  if (!preferredVersion && VERSIONS?.available?.length > 0) {
-    preferredVersion = VERSIONS.available[0].id;
-  }
-  console.log("📋 [loadDefaultData] 首选版本:", preferredVersion || "(无)");
-
-  let data;
-
-  // 路径 1: 首选版本
-  if (preferredVersion) {
-    const url = `analyses/analysis_${preferredVersion}.json?t=${TS}`;
-    const resp = await fetch(url);
-    if (resp.ok) {
-      data = await resp.json();
-      console.log("   ✅ 路径1 命中:", url);
-    } else {
-      console.warn("   ❌ 路径1 失败 HTTP " + resp.status + "，跳过");
+  try {
+    // 决定首选版本：localStorage > versions.current > 可用列表第一个
+    let preferredVersion = localStorage.getItem("taptap_dashboard_version");
+    if (!preferredVersion && VERSIONS?.current) {
+      preferredVersion = VERSIONS.current;
     }
-  }
-
-  // 路径 2: versions 列表里逐个试
-  if (!data && VERSIONS?.available?.length > 0) {
-    for (const v of VERSIONS.available) {
-      if (v.id === preferredVersion) continue;  // 已试过
-      const url = `analyses/analysis_${v.id}.json?t=${TS}`;
-      const resp = await fetch(url);
-      if (resp.ok) { data = await resp.json(); console.log("   ✅ 路径2 命中:", url); break; }
+    if (!preferredVersion && VERSIONS?.available?.length > 0) {
+      preferredVersion = VERSIONS.available[0].id;
     }
+    console.log("📋 [loadDefaultData] 首选版本:", preferredVersion || "(无)");
+
+    let data;
+
+    // 路径 1: 首选版本
+    if (preferredVersion) {
+      const url = `analyses/analysis_${preferredVersion}.json?t=${TS}`;
+      try {
+        data = await fetchJson(url, { retries: 1, timeoutMs: 30000 });
+        console.log("   ✅ 路径1 命中:", url);
+      } catch (err) {
+        console.warn("   ❌ 路径1 失败（" + err.message + "），跳过");
+      }
+    }
+
+    // 路径 2: versions 列表里逐个试
+    if (!data && VERSIONS?.available?.length > 0) {
+      for (const v of VERSIONS.available) {
+        if (v.id === preferredVersion) continue;  // 已试过
+        const url = `analyses/analysis_${v.id}.json?t=${TS}`;
+        try {
+          data = await fetchJson(url, { retries: 0, timeoutMs: 30000 });
+          console.log("   ✅ 路径2 命中:", url);
+          break;
+        } catch (err) {
+          console.warn("   ❌ 路径2 失败（" + err.message + "）:", url);
+        }
+      }
+    }
+
+    // 路径 3: 根目录 analysis.json
+    if (!data) {
+      const url = `analysis.json?t=${TS}`;
+      data = await fetchJson(url, { retries: 1, timeoutMs: 30000 });
+      console.log("   ✅ 路径3 命中:", url);
+    }
+
+    if (!data || !data.overview) throw new Error("数据字段不完整（缺少 overview）");
+
+    DATA = data;
+    resetBm25Cache();
+    console.log("✅ loadDefaultData 完成，overview keys:", Object.keys(data.overview));
+    renderAll();
+    showLoadState("hidden");
+    showToast(successMsg || ("📊 已加载 " + (data.version_id || "默认")));
+
+    // 检索语料体积大且只有搜索/展开原文时才用 → 首屏渲染完再后台偷偷拉，
+    // 失败也不影响看板，等用户真去搜索时会再重试并给出提示。
+    ensureBm25Reviews().catch(err => console.warn("🔎 检索语料后台预取失败：", err.message));
+  } catch (err) {
+    // 关键：这里必须兜住，否则 await 的异常会让整个页面停在空骨架且毫无提示
+    console.error("❌ 首屏加载失败:", err);
+    showLoadState("error", err.message);
   }
-
-  // 路径 3: 根目录 analysis.json
-  if (!data) {
-    const url = `analysis.json?t=${TS}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    data = await resp.json();
-    console.log("   ✅ 路径3 命中:", url);
-  }
-
-  if (!data || !data.overview) throw new Error("数据字段不完整（缺少 overview）");
-
-  DATA = data;
-  console.log("✅ loadDefaultData 完成，overview keys:", Object.keys(data.overview));
-  renderAll();
-  showToast(successMsg || ("📊 已加载 " + (data.version_id || "默认") + " · " + (data.overview?.total_reviews || "?") + " 条评论"));
 }
 
 // ---- 启动：DOM + CDN 脚本都就绪后才跑 ----
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("🚀 DOMContentLoaded: 开始初始化...");
-  loadLLMConfig();     // 把存过的 API Key 自动填回表单
-  await loadVersionList();
-  await loadDefaultData();
+  try {
+    loadLLMConfig();     // 把存过的 API Key 自动填回表单
+    await loadVersionList();
+    await loadDefaultData();
+  } catch (err) {
+    console.error("❌ 初始化失败:", err);
+    showLoadState("error", err.message);
+  }
 });
 
 // ---- 数字动画 ----
@@ -1798,7 +1915,13 @@ function findReviewDoc(reviewId, fallbackText) {
   return null;
 }
 
-function buildSampleDetail(card) {
+async function buildSampleDetail(card) {
+  // 原评论全文存在懒加载的检索语料里，先确保语料到位
+  let loadErr = null;
+  if (!DATA?.bm25?.reviews) {
+    try { await ensureBm25Reviews(); }
+    catch (err) { loadErr = err.message; }
+  }
   const doc = findReviewDoc(card.getAttribute("data-review-id"),
                             card.getAttribute("data-sample-content"));
   const q = card.getAttribute("data-search") || "";
@@ -1806,7 +1929,10 @@ function buildSampleDetail(card) {
 
   let body;
   if (!doc) {
-    body = `<div class="text-slate-500">未在检索索引中定位到这条评论（索引里未收录该条原文）。</div>`;
+    body = loadErr
+      ? `<div class="text-rose-300">❌ ${_esc(loadErr)}</div>
+         <div class="text-slate-500 text-[11px] mt-1">网络恢复后重新点这条样本即可重试。</div>`
+      : `<div class="text-slate-500">未在检索索引中定位到这条评论（索引里未收录该条原文）。</div>`;
   } else {
     const color = doc.game === GAME_A ? COLOR_A : COLOR_B;
     body = `
@@ -1834,7 +1960,7 @@ function buildSampleDetail(card) {
   return wrap;
 }
 
-document.addEventListener("click", function(e) {
+document.addEventListener("click", async function(e) {
   // 1) 点击样本 → 展开/收起原评论
   const card = e.target.closest(".insight-sample");
   if (card) {
@@ -1843,7 +1969,14 @@ document.addEventListener("click", function(e) {
       next.remove();               // 已展开 → 收起
       return;
     }
-    card.insertAdjacentElement("afterend", buildSampleDetail(card));
+    // 语料可能还没到位，先占位避免看起来"点了没反应"
+    const holder = document.createElement("div");
+    holder.className = "sample-detail mt-2 p-3 rounded-lg text-slate-500";
+    holder.style.cssText = "background:rgba(19,26,46,0.92); border:1px solid rgba(125,141,184,0.35)";
+    holder.textContent = "⏳ 正在加载原文…";
+    card.insertAdjacentElement("afterend", holder);
+    const detail = await buildSampleDetail(card);
+    if (holder.isConnected) holder.replaceWith(detail);   // 期间若被收起则不插回
     return;
   }
 
@@ -2581,12 +2714,30 @@ function highlight(text, tokens) {
   return html;
 }
 
-function doBM25Search() {
+async function doBM25Search() {
   const qInput = document.getElementById("bm25-query").value.trim();
   if (!qInput) return;
 
   const bm25 = DATA.bm25;
   if (!bm25) { alert("BM25 索引未就绪，请先跑 prepare_data.py"); return; }
+
+  // 检索语料是懒加载的：先把结果区切成「加载中」，等语料到位再真正检索
+  const container = document.getElementById("bm25-results");
+  const listEl = document.getElementById("bm25-results-list");
+  if (!DATA.bm25.reviews) {
+    container.classList.remove("hidden");
+    document.getElementById("bm25-count").textContent = "";
+    document.getElementById("bm25-score-note").textContent = "";
+    listEl.innerHTML = `<div class="text-center py-6 text-slate-500">⏳ 正在加载检索索引…</div>`;
+    try {
+      await ensureBm25Reviews();
+    } catch (err) {
+      listEl.innerHTML =
+        `<div class="text-center py-6 text-rose-300">❌ ${_esc(err.message)}</div>
+         <div class="text-center text-xs text-slate-500">网络恢复后重新搜索即可重试。</div>`;
+      return;
+    }
+  }
 
   const avgdl = bm25.avgdl;
   const idf = bm25.idf || {};
@@ -2642,14 +2793,12 @@ function doBM25Search() {
   }
 
   // 渲染
-  const container = document.getElementById("bm25-results");
   container.classList.remove("hidden");
   document.getElementById("bm25-count").textContent = `· 找到 ${scored.length} 条相关评论`;
   document.getElementById("bm25-score-note").textContent = fallbackMode
     ? `原句子串匹配（BM25 未命中，已回落为字面包含匹配）| 查询: [${qInput}]`
     : `BM25 (k1=${BM25_K1}, b=${BM25_B}) | 查询词: [${queryTokens.join(", ")}]`;
 
-  const listEl = document.getElementById("bm25-results-list");
   if (scored.length === 0) {
     listEl.innerHTML = `<div class="text-center py-6 text-slate-500">😢 没有找到相关评论，试试换个关键词？</div>`;
     return;

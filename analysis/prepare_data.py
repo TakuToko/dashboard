@@ -1123,14 +1123,30 @@ def main():
           f"{len(insights_result['recommendations'])} 条建议 + "
           f"LLM 上下文 {len(insights_result['llm_context'])} 字符")
 
+    # —— 输出 0：把体积最大的检索语料 bm25.reviews 拆到独立文件 ——
+    # 原因：整份 JSON 约 3.2MB，其中 bm25.reviews 占 ~72%，而它只在「检索区搜索」
+    #      和「点样本展开原文」时用到，首屏渲染完全不需要。放在主文件里会让首屏
+    #      必须等 3MB 下载完才渲染（网络差时直接卡死/超时）。
+    # 拆分后主 JSON 只剩 idf/avgdl/total_docs（约 100KB），语料改为前端按需懒加载。
+    bm25 = data.get("bm25") or {}
+    bm25_reviews = bm25.pop("reviews", [])
+    retrieval_path = os.path.join(ANALYSES_DIR, f"bm25_{version_id}.json")
+    root_retrieval_path = os.path.join(DASHBOARD_DIR, "bm25.json")
+
     # —— 输出 1：多版本 JSON（dashboard/analyses/analysis_{version_id}.json）——
     os.makedirs(ANALYSES_DIR, exist_ok=True)
     version_json_path = os.path.join(ANALYSES_DIR, f"analysis_{version_id}.json")
     with open(version_json_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # —— 输出 2：兼容当前版本（dashboard/analysis.json）——
+    # —— 输出 1.5：检索索引（紧凑格式，仅供前端懒加载，不需要人读）——
+    with open(retrieval_path, "w", encoding="utf-8") as f:
+        json.dump({"version_id": version_id, "reviews": bm25_reviews},
+                  f, ensure_ascii=False, separators=(",", ":"))
+
+    # —— 输出 2：兼容当前版本（dashboard/analysis.json + dashboard/bm25.json）——
     shutil.copy(version_json_path, CURRENT_JSON_PATH)
+    shutil.copy(retrieval_path, root_retrieval_path)
 
     # —— 输出 3：versions.json（前端下拉框读这个）——
     os.makedirs(DASHBOARD_DIR, exist_ok=True)
@@ -1181,7 +1197,8 @@ def main():
     print("=" * 60)
     print(f"✅ 版本 {version_id} 已生成")
     print(f"   📊 分析 JSON: {version_json_path}")
-    print(f"   🔗 当前副本 : {CURRENT_JSON_PATH}")
+    print(f"   🔎 检索索引 : {retrieval_path}（{len(bm25_reviews)} 条，前端按需懒加载）")
+    print(f"   🔗 当前副本 : {CURRENT_JSON_PATH} + {root_retrieval_path}")
     print(f"   📋 版本清单 : {VERSIONS_PATH}")
     print(f"   📦 版本列表 : {len(available)} 个版本可用")
     print("=" * 60)
