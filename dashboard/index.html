@@ -1636,21 +1636,31 @@ function renderLifecycle() {
 let currentPersonaGame = GAME_A;
 
 function showPersona(which) {
-  currentPersonaGame = which === "wzq" ? GAME_A : GAME_B;
-  const color = which === "wzq" ? COLOR_A : COLOR_B;
+  // 兼容两种入参：短键 "wzq"/"jcc"（Tab 按钮）或游戏全名（applySettings 传入 currentPersonaGame）。
+  // 之前只认短键，导致 applySettings 传入 "王者万象棋" 时被误判为金铲铲，默认Tab被强制切走。
+  const isWzq = which === "wzq" || which === GAME_A;
+  currentPersonaGame = isWzq ? GAME_A : GAME_B;
+  const color = isWzq ? COLOR_A : COLOR_B;
 
-  document.getElementById("tab-wzq").className = which === "wzq"
+  document.getElementById("tab-wzq").className = isWzq
     ? "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-wzq/15 border border-wzq/30 text-wzq"
     : "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-slate-700/30 border border-slate-600/40 text-slate-300 hover:text-wzq";
-  document.getElementById("tab-jcc").className = which === "jcc"
-    ? "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-jcc/15 border border-jcc/30 text-jcc"
-    : "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-slate-700/30 border border-slate-600/40 text-slate-300 hover:text-jcc";
+  document.getElementById("tab-jcc").className = isWzq
+    ? "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-slate-700/30 border border-slate-600/40 text-slate-300 hover:text-jcc"
+    : "tab-btn px-5 py-2.5 rounded-lg text-sm font-medium bg-jcc/15 border border-jcc/30 text-jcc";
 
   const persona = DATA.player_persona[currentPersonaGame];
   const stages = persona.stage_stats;
 
+  // 复用已存在的实例：重复 echarts.init 同一容器会拿到旧实例，而旧实例绑定的 canvas
+  // 已被 innerHTML 清空/脱离 DOM，导致图形渲染到不可见节点 → 图表空白。
+  const chartOf = elId => {
+    const el = document.getElementById(elId);
+    return echarts.getInstanceByDom(el) || echarts.init(el);
+  };
+
   // —— 阶段 vs 平均分（柱状图）——
-  echarts.init(document.getElementById("chart-stage-score")).setOption({
+  chartOf("chart-stage-score").setOption({
     title: { text: "各阶段玩家平均评分", left: "center", textStyle: { color, fontSize: 14, fontWeight: 600 } },
     tooltip: { trigger: "axis", backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
     grid: { top: 50, left: 50, right: 30, bottom: 50 },
@@ -1665,7 +1675,7 @@ function showPersona(which) {
   }, true);
 
   // —— 阶段人数占比（饼图）——
-  echarts.init(document.getElementById("chart-stage-count")).setOption({
+  chartOf("chart-stage-count").setOption({
     title: { text: "各阶段玩家占比", left: "center", textStyle: { color, fontSize: 14, fontWeight: 600 } },
     tooltip: { trigger: "item", formatter: p => `${p.name}: ${p.value} 条评论 (${p.percent}%)`, backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
     legend: { bottom: 0, textStyle: { color: TEXT_BOLD, fontSize: 11 } },
@@ -1693,12 +1703,17 @@ function showPersona(which) {
     const el = document.getElementById(elId);
     if (!el) return;
     if (!list.length) {
+      const old = echarts.getInstanceByDom(el);
+      if (old) old.dispose();
       el.innerHTML = `<div class="text-xs text-slate-500 p-3">暂无数据</div>`;
       return;
     }
+    // 先 dispose 旧实例并清掉可能残留的「暂无数据」文本，再重新 init 绘制
+    const old = echarts.getInstanceByDom(el);
+    if (old) old.dispose();
     el.innerHTML = "";
     const tot = persona.total_reviews || 0;
-    echarts.init(el).setOption({
+    chartOf(elId).setOption({
       tooltip: { trigger: "axis",
                  formatter: p => `${p[0].name}：${p[0].value} 条${tot ? `（${(p[0].value / tot * 100).toFixed(1)}%）` : ""}`,
                  backgroundColor: "rgba(19,26,46,0.95)", borderColor: "rgba(125,141,184,0.2)", textStyle: { color: TEXT_BOLD } },
@@ -1730,9 +1745,15 @@ function showPersona(which) {
     };
 
     stageBox.innerHTML = stages.map(s => {
-      const list = (s.top_phrases || []).filter(p => (p.count || 0) >= STAGE_MIN_HITS);
-      const topOf = pol => list.filter(p => polarityOf(p) === pol)
+      const allPhr = s.top_phrases || [];
+      // 先按阈值 ≥5 取该极性 top3；若为空则放宽到 ≥2，尽量给出可读信息而不是留白
+      const topOf = (pol, minHits) => allPhr
+        .filter(p => polarityOf(p) === pol && (p.count || 0) >= minHits)
         .sort((a, b) => b.lift - a.lift).slice(0, 3);
+      const pick = pol => {
+        const strict = topOf(pol, STAGE_MIN_HITS);
+        return strict.length ? strict : topOf(pol, 2);
+      };
 
       const rowHtml = (p, accent) => `
         <div class="flex items-center gap-2 mb-1.5 last:mb-0">
@@ -1742,12 +1763,14 @@ function showPersona(which) {
             style="background:${accent}22; color:${accent}">${p.lift}× 全局</span>
         </div>`;
 
-      const block = (label, arr, accent) => `
+      const block = (label, arr, accent, emptyHint) => `
         <div class="mt-2 first:mt-0">
           <div class="text-[10px] mb-1" style="color:${accent}">${label}</div>
           ${arr.length ? arr.map(p => rowHtml(p, accent)).join("")
-                       : `<div class="text-[10px] text-slate-600">—</div>`}
+                       : `<div class="text-[10px] text-slate-600">${emptyHint}</div>`}
         </div>`;
+
+      const neg = pick("negative"), pos = pick("positive");
 
       return `
       <div class="p-4 rounded-xl border border-slate-700/40 bg-slate-800/25">
@@ -1755,9 +1778,10 @@ function showPersona(which) {
           <span class="font-semibold text-sm" style="color:${color}">${s.stage}</span>
           <span class="text-xs text-slate-500">${s.count} 条 · 平均 ${s.avg_score} 分</span>
         </div>
-        ${list.length
-          ? block("▲ 不满", topOf("negative"), "#EF4444") + block("▼ 认可", topOf("positive"), "#22C55E")
-          : `<div class="text-xs text-slate-500">该阶段样本不足，未生成特征话题</div>`}
+        ${(neg.length || pos.length)
+          ? block("▲ 不满", neg, "#EF4444", "该阶段暂无明显不满（提及均 &lt;2）")
+            + block("▼ 认可", pos, "#22C55E", "该阶段暂无明显认可（提及均 &lt;2）")
+          : `<div class="text-xs text-slate-500">该阶段样本不足（${s.count} 条），未生成特征话题</div>`}
       </div>`;
     }).join("");
   }
