@@ -37,6 +37,37 @@
 <!-- ECharts WordCloud -->
 <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
 
+<!-- ==================== 📊 访问统计（ID 留空则完全跳过，不加载任何脚本、不发任何请求）==================== -->
+<script>
+  // Clarity：录屏 + 热图 + 智能事件（定性，看"人怎么用"）。ID 见 Clarity 后台 Settings → Overview
+  const CLARITY_PROJECT_ID = "ywd9y891e0";
+  // GA4：PV / UV / 事件计数（定量，看"多少人来"）。ID 形如 G-XXXXXXXXXX，见 GA4 数据流设置
+  const GA4_MEASUREMENT_ID = "G-BQ8M1R8E4J";
+</script>
+<script>
+  (function () {
+    // Clarity 官方异步 snippet
+    if (CLARITY_PROJECT_ID) {
+      (function (c, l, a, r, i, t, y) {
+        c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments); };
+        t = l.createElement(r); t.async = 1; t.src = "https://www.clarity.ms/tag/" + i;
+        y = l.getElementsByTagName(r)[0]; y.parentNode.insertBefore(t, y);
+      })(window, document, "clarity", "script", CLARITY_PROJECT_ID);
+    }
+    // GA4 官方异步 snippet
+    if (GA4_MEASUREMENT_ID) {
+      var s = document.createElement("script");
+      s.async = 1;
+      s.src = "https://www.googletagmanager.com/gtag/js?id=" + GA4_MEASUREMENT_ID;
+      document.head.appendChild(s);
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function () { window.dataLayer.push(arguments); };
+      window.gtag("js", new Date());
+      window.gtag("config", GA4_MEASUREMENT_ID);
+    }
+  })();
+</script>
+
 <style>
   .chart-box { width: 100%; height: 380px; }
   .chart-box-sm { width: 100%; height: 280px; }
@@ -132,7 +163,7 @@
   <div class="hero-divider w-48 mx-auto mt-8"></div>
 </header>
 
-<main class="max-w-[1440px] mx-auto px-6 pb-16 relative z-10">
+<main class="max-w-[1440px] mx-auto px-6 pb-16 relative z-10" data-clarity-unmask="true">
 
 <!-- 首屏加载状态：数据没到位时给出明确提示，避免网络失败时整页静默空白 -->
 <div id="load-state" class="glass p-8 mb-6 text-center text-sm text-slate-400">⏳ 正在加载数据…</div>
@@ -233,13 +264,13 @@
     <!-- 快捷标签 -->
     <div class="mt-3 flex items-center gap-2 flex-wrap text-xs">
       <span class="text-slate-500">💡 试试：</span>
-      <button onclick="setQuery('ELO 控牌')" class="px-2.5 py-1 rounded-full border transition"
+      <button data-preset="ELO 控牌" onclick="setQuery('ELO 控牌')" class="px-2.5 py-1 rounded-full border transition"
         style="border-color: var(--color-a); color: var(--color-a)" onmouseover="this.style.background='var(--color-a-soft)'" onmouseout="this.style.background='transparent'">ELO 控牌</button>
-      <button onclick="setQuery('美术 画面')" class="px-2.5 py-1 rounded-full border transition"
+      <button data-preset="美术 画面" onclick="setQuery('美术 画面')" class="px-2.5 py-1 rounded-full border transition"
         style="border-color: var(--color-b); color: var(--color-b)" onmouseover="this.style.background='var(--color-b-soft)'" onmouseout="this.style.background='transparent'">美术 画面</button>
-      <button onclick="setQuery('IP 情怀')" class="px-2.5 py-1 rounded-full border transition"
+      <button data-preset="IP 情怀" onclick="setQuery('IP 情怀')" class="px-2.5 py-1 rounded-full border transition"
         style="border-color: var(--color-a); color: var(--color-a)" onmouseover="this.style.background='var(--color-a-soft)'" onmouseout="this.style.background='transparent'">IP 情怀</button>
-      <button onclick="setQuery('强度 平衡')" class="px-2.5 py-1 rounded-full border transition"
+      <button data-preset="强度 平衡" onclick="setQuery('强度 平衡')" class="px-2.5 py-1 rounded-full border transition"
         style="border-color: var(--color-b); color: var(--color-b)" onmouseover="this.style.background='var(--color-b-soft)'" onmouseout="this.style.background='transparent'">强度 平衡</button>
     </div>
   </div>
@@ -2020,6 +2051,7 @@ document.addEventListener("click", async function(e) {
       return;
     }
     // 语料可能还没到位，先占位避免看起来"点了没反应"
+    trackEvt("sample_expand");
     const holder = document.createElement("div");
     holder.className = "sample-detail mt-2 p-3 rounded-lg text-slate-500";
     holder.style.cssText = "background:rgba(19,26,46,0.92); border:1px solid rgba(125,141,184,0.35)";
@@ -2056,6 +2088,19 @@ document.addEventListener("click", async function(e) {
       document.getElementById("bm25-results").scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }
+});
+
+// ===== 访问统计埋点：玩家画像 Tab / 预设快捷词 =====
+// 走事件委托而不是塞进原有函数：showPersona 在页面初始化时也会被调用一次，
+// 在函数内部埋点会把"默认渲染"误记成用户切换，监听点击则只记真实交互。
+document.addEventListener("click", function (e) {
+  const tab = e.target.closest("#tab-wzq, #tab-jcc");
+  if (tab) {
+    trackEvt("persona_tab", { persona_game: tab.id === "tab-wzq" ? GAME_A : GAME_B });
+    return;
+  }
+  const preset = e.target.closest("[data-preset]");
+  if (preset) trackEvt("preset_click", { preset: preset.getAttribute("data-preset") });
 });
 
 function renderRecommendations() {
@@ -2309,6 +2354,8 @@ async function generateAIReport() {
   try { cfg = JSON.parse(cfg_raw); } catch { alert("配置损坏"); return; }
   if (!cfg.endpoint || !cfg.apikey || !cfg.model) { alert("请填写完整的 Endpoint / Model / API Key"); return; }
 
+  trackEvt("ai_ask");   // 配置齐全、确实发起了问答才计数，避免把"点了但没配好"也算一次
+
   // UI 状态
   const btn = document.getElementById("btn-ai-report");
   const reportDiv = document.getElementById("ai-report");
@@ -2437,6 +2484,27 @@ function initRevealObserver() {
 }
 
 // ============================================================
+// 访问统计埋点 —— Clarity（定性：看人怎么用）+ GA4（定量：看多少人来）
+// ============================================================
+// 两个 SDK 都没启用时（ID 留空）这里全部空转，不影响页面。
+function trackEvt(name, params) {
+  if (typeof window.clarity === "function") {
+    // Clarity：params 记为自定义标签（可在 Filters 里筛选会话），name 记为自定义事件
+    if (params) for (const k in params) window.clarity("set", k, params[k]);
+    window.clarity("event", name);
+  }
+  if (typeof window.gtag === "function") window.gtag("event", name, params || {});
+}
+
+// 模块到达：每个模块只记一次，累积成路径，用于判断 5 大模块的漏斗走到了哪一步
+const _reachedModules = [];
+function trackModuleReach(id) {
+  if (_reachedModules.includes(id)) return;
+  _reachedModules.push(id);
+  trackEvt("module_reach", { module: id, reached: _reachedModules.join(",") });
+}
+
+// ============================================================
 // 模块导航 —— 滚动时高亮当前所处模块（顶部胶囊 + 侧边竖栏共用 data-nav）
 // ============================================================
 function initModuleNav() {
@@ -2450,6 +2518,7 @@ function initModuleNav() {
     entries.forEach(entry => {
       if (!entry.isIntersecting) return;
       pills.forEach(p => p.classList.toggle("active", p.getAttribute("data-nav") === entry.target.id));
+      trackModuleReach(entry.target.id);   // 同一 observer 顺带记录模块到达，避免重复建观察器
     });
   }, { rootMargin: "-84px 0px -70% 0px", threshold: 0 });
 
