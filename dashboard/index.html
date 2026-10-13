@@ -7,6 +7,7 @@
 
 <!-- 🎨 主题配置（最先加载，后面所有颜色都从这里读） -->
 <script src="theme.js"></script>
+<script src="glossary.js"></script>
 <link rel="stylesheet" href="theme.css" />
 
 <!-- Tailwind CSS (CDN) — 颜色从 THEME 动态注入 -->
@@ -824,6 +825,25 @@
             </div>
           </div>
         </details>
+        <!-- 📖 术语表（只读查看，真源为 dashboard/glossary.js） -->
+        <details class="relative">
+          <summary class="cursor-pointer px-3 py-1.5 rounded-lg text-xs border hover:opacity-80 transition list-none flex items-center gap-1"
+            style="border-color: var(--chart-axis); color: var(--chart-text-bold)">
+            📖 术语表
+          </summary>
+          <div class="absolute right-0 top-full mt-2 w-[420px] p-4 rounded-lg z-50 max-h-[75vh] overflow-y-auto text-xs"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); box-shadow: 0 10px 30px rgba(0,0,0,0.3)">
+            <div class="flex items-center justify-between mb-2 gap-2">
+              <span class="font-medium" style="color: var(--chart-text-bold)">领域术语表（只读）</span>
+              <span class="text-[10px] text-slate-500 whitespace-nowrap">仅维护《王者万象棋》</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mb-3 leading-relaxed">
+              用于给 AI 提供可核实的事实口径，减少把玩家错误说法当结论。
+              如需修改，请编辑仓库中的 <code>dashboard/glossary.js</code>，提交部署后生效。
+            </p>
+            <div id="glossary-content" class="space-y-3"></div>
+          </div>
+        </details>
         <!-- AI 生成按钮 -->
         <button id="btn-ai-report" onclick="generateAIReport()"
           class="px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 transition inline-flex items-center gap-1"
@@ -1296,6 +1316,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   console.log("🚀 DOMContentLoaded: 开始初始化...");
   try {
     loadLLMConfig();     // 把存过的 API Key 自动填回表单
+    renderGlossary();    // 🆕 术语表弹层（只读，读 glossary.js）
     await loadVersionList();
     await loadDefaultData();
   } catch (err) {
@@ -2427,7 +2448,7 @@ async function generateAIReport() {
       body: JSON.stringify({
         model: cfg.model,
         messages: [
-          { role: "system", content: sysPrompt },
+          { role: "system", content: sysPrompt + glossarySystemSuffix() },
           { role: "user", content: finalUserPrompt },
         ],
         temperature: 0.3,
@@ -2501,6 +2522,87 @@ async function generateAIReport() {
 }
 
 // ============================================================
+// 📖 领域术语表（只读查看 + 注入 AI）
+// 真源：dashboard/glossary.js 的 window.GAME_GLOSSARY（本页不提供编辑）。
+// 作用：给 AI 一份可核实的事实口径，减少「把玩家错误说法当结论」。
+// ============================================================
+
+// 把术语表拼成一段纯文本，供注入 system prompt
+function glossaryText() {
+  const g = window.GAME_GLOSSARY || {};
+  const games = Object.keys(g);
+  if (!games.length) return "";
+  const blocks = [];
+  games.forEach(game => {
+    const d = g[game] || {};
+    const parts = [];
+    if ((d["棋手"] || []).length) parts.push(`棋手（玩家操控的角色）：${d["棋手"].join("、")}`);
+    if ((d["棋子"] || []).length) parts.push(`棋子（对局中的英雄/单位）：${d["棋子"].join("、")}`);
+    (d["关键机制"] || []).forEach(m => { if (m && m.term) parts.push(`${m.term}：${m.desc || ""}`); });
+    (d["易错点"] || []).forEach(e => {
+      if (e && e.wrong && e.right) parts.push(`错误说法「${e.wrong}」应为「${e.right}」，以正确说法为准`);
+    });
+    if (parts.length) blocks.push(`《${game}》：\n- ${parts.join("\n- ")}`);
+  });
+  return blocks.join("\n\n");
+}
+
+// 注入 system prompt 的后缀（带适用范围声明；空表则不加）
+function glossarySystemSuffix() {
+  const text = glossaryText();
+  if (!text) return "";
+  return `\n\n【领域术语表】以下为已核实的事实口径，仅覆盖《王者万象棋》——`
+    + `回答金铲铲之战相关问题时不要套用本表。若检索到的评论与本表冲突，以本表为准，并可指出该评论有误。\n${text}`;
+}
+
+// 渲染「📖 术语表」弹层（只读）
+function renderGlossary() {
+  const box = document.getElementById("glossary-content");
+  if (!box) return;
+  const g = window.GAME_GLOSSARY || {};
+  const games = Object.keys(g);
+  if (!games.length) {
+    box.innerHTML = `<div class="text-slate-500 text-center py-4">术语表为空</div>`;
+    return;
+  }
+  const chipList = (items) => items.map(t =>
+    `<span class="px-1.5 py-0.5 rounded text-[11px]" style="background: var(--bg-surface); border: 1px solid var(--chart-axis)">${_esc(t)}</span>`
+  ).join("");
+
+  box.innerHTML = games.map(game => {
+    const d = g[game] || {};
+    const mech = (d["关键机制"] || []).filter(m => m && m.term).map(m =>
+      `<div class="mb-1"><span class="font-medium" style="color: var(--chart-text-bold)">${_esc(m.term)}</span>：<span class="text-slate-400">${_esc(m.desc || "")}</span></div>`
+    ).join("");
+    const errs = (d["易错点"] || []).filter(e => e && e.wrong).map(e =>
+      `<div class="mb-1 text-slate-400">「<span style="color: var(--color-negative)">${_esc(e.wrong)}</span>」→ 应为「<span style="color: var(--color-positive)">${_esc(e.right || "")}</span>」</div>`
+    ).join("");
+    const runners = (d["棋手"] || []).length ? `
+      <div>
+        <div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">♟️ 棋手 <span class="text-slate-500">（${d["棋手"].length}）</span></div>
+        <div class="flex flex-wrap gap-1.5">${chipList(d["棋手"])}</div>
+      </div>` : "";
+    const pieces = (d["棋子"] || []).length ? `
+      <div>
+        <div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">🎴 棋子 <span class="text-slate-500">（${d["棋子"].length}）</span></div>
+        <div class="flex flex-wrap gap-1.5">${chipList(d["棋子"])}</div>
+      </div>` : "";
+    const hasAny = runners || pieces || mech || errs;
+    if (!hasAny) return `<div class="text-slate-500 py-2">《${_esc(game)}》：暂未录入术语</div>`;
+    return `
+      <div class="pb-3 mb-1" style="border-bottom: 1px dashed var(--chart-axis)">
+        <div class="text-xs font-semibold mb-2" style="color: var(--chart-text-bold)">《${_esc(game)}》</div>
+        <div class="space-y-3">
+          ${runners}
+          ${pieces}
+          ${mech ? `<div><div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">🔧 关键机制</div>${mech}</div>` : ""}
+          ${errs ? `<div><div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">⚠️ 易错点</div>${errs}</div>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ============================================================
 // 💬 AI 问答对话（多轮 + 检索增强）
 // 与 AI 报告并列：报告是"一次性长文"，问答是"基于同一份数据的追问"。
 // 每轮用问题在 BM25 语料里检索 top-K 条真实评论注入，要求模型引用评论 id，
@@ -2520,7 +2622,15 @@ const CHAT_SYSTEM_PROMPT = `你是自走棋品类的产品分析师，正在帮�
 - 引用数字须与数据一致，不做换算或改写。
 - 直接作答，不写开场白与结束语，不说明自身工作过程。
 - 不用"综上所述""值得注意的是""不难看出"等套话，也不用"赋能""抓手""闭环"等空泛行话。
-- 问题若与本页数据无关，说明你只能回答与这份数据相关的问题。`;
+- 问题若与本页数据无关，说明你只能回答与这份数据相关的问题。
+
+数据性质与事实纪律：
+- 【检索到的真实评论】是玩家的主观言论，可能包含事实错误、以讹传讹或个别极端说法，不能直接当作事实。
+- 涉及具体事实（角色定位、名称、数值、机制）时，不替玩家下断言，改用"有玩家提到""有 N 条评论称"引出，并附引用 id。
+- 同一事实出现相互矛盾的说法时，写明"说法不一"，不择一采信。
+- 仅 1 条评论提及的说法，标注"仅个别玩家提及"，不作为结论。
+- 若【领域术语表】与评论冲突，以术语表为准，并可指出该评论有误。
+- 玩家对体验的评价（好玩/无聊/坐牢等）属主观范畴，可正常归纳，无需加限定。`;
 
 // 用问题在 BM25 语料里取最相关的若干条真实评论
 async function retrieveForChat(question, topK) {
@@ -2668,7 +2778,7 @@ async function chatSend() {
 
     // 组装消息：system + 最近若干轮历史（不含本轮）+ 本轮（含检索结果）
     const hist = CHAT_HISTORY.slice(0, -1).slice(-CHAT_MAX_TURNS);
-    const messages = [{ role: "system", content: CHAT_SYSTEM_PROMPT }]
+    const messages = [{ role: "system", content: CHAT_SYSTEM_PROMPT + glossarySystemSuffix() }]
       .concat(hist.map(m => ({ role: m.role, content: m.content })))
       .concat([{ role: "user", content: buildChatTurnContent(q, docs) }]);
 
