@@ -1,10 +1,10 @@
 {
-  "current": "20261009_015314",
+  "current": "20261013_074206",
   "available": [
     {
       "id": "20261008_083526",
-      "label": "2026-10-08 08:35 · 1000条 · 797KB",
-      "size": 816270,
+      "label": "2026-10-08 08:35 · 1000条 · 795KB",
+      "size": 814642,
       "schema_version": 1,
       "data_collected_at": "2026-10-08 08:35",
       "generated_at": "2026-10-08 08:35",
@@ -19,11 +19,27 @@
     },
     {
       "id": "20261009_015314",
-      "label": "2026-10-09 01:53 · 1000条 · 812KB",
-      "size": 832404,
+      "label": "2026-10-09 01:53 · 1000条 · 811KB",
+      "size": 830802,
       "schema_version": 1,
       "data_collected_at": "2026-10-09 01:53",
       "generated_at": "2026-10-09 01:53",
+      "modules": [
+        "llm_phrases",
+        "data_compare",
+        "insights",
+        "recommendations",
+        "key_findings",
+        "bm25"
+      ]
+    },
+    {
+      "id": "20261013_074206",
+      "label": "2026-10-13 07:42 · 1000条 · 802KB",
+      "size": 822069,
+      "schema_version": 1,
+      "data_collected_at": "2026-10-13 07:42",
+      "generated_at": "2026-10-13 07:42",
       "modules": [
         "llm_phrases",
         "data_compare",
