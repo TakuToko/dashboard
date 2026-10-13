@@ -852,6 +852,41 @@
       <div id="ai-report-content" class="p-5 rounded-lg text-sm leading-relaxed whitespace-pre-wrap"
         style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></div>
     </div>
+
+    <!-- 💬 AI 问答对话（基于本页数据的多轮追问） -->
+    <div id="ai-chat" class="mt-6">
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <span class="text-lg">💬</span>
+        <span class="text-sm font-semibold" style="color: var(--color-accent)">AI 问答</span>
+        <span class="text-xs text-slate-500">基于本页真实评论作答 · 可点引用查看原文</span>
+        <span id="ai-chat-status" class="text-xs text-slate-500"></span>
+        <button id="btn-chat-clear" onclick="clearChat()"
+          class="ml-auto px-3 py-1.5 rounded-lg text-xs hover:opacity-80 transition"
+          style="border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">🗑️ 清空对话</button>
+      </div>
+      <div class="rounded-lg overflow-hidden" style="background: var(--bg-surface); border: 1px solid var(--chart-axis)">
+        <div id="ai-chat-messages" class="p-4 space-y-4 max-h-[520px] overflow-y-auto">
+          <div class="chat-hint text-slate-500 text-xs leading-relaxed">
+            在这里就这份数据提问，例如「万象棋差评里反复出现的问题是什么？」「新手期玩家的主要不满有哪些？」。
+            回答会检索本页真实评论并标注引用编号，点击编号可展开对应原评论。
+            需先在右上角 🔑 API Key 配置中填好大模型参数。
+          </div>
+        </div>
+        <div class="p-3" style="border-top: 1px solid var(--chart-axis)">
+          <div class="flex gap-2 items-end">
+            <textarea id="ai-chat-input" rows="2"
+              placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"
+              class="flex-1 px-3 py-2 rounded-lg text-sm outline-none resize-none"
+              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"
+              oninput="autoGrowChatInput()"
+              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatSend()}"></textarea>
+            <button id="btn-chat-send" onclick="chatSend()"
+              class="px-5 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
+              style="background: var(--color-accent); color: #fff">发送</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 </div><!-- /模块 ⑤: 核心结论 -->
 
@@ -2464,6 +2499,247 @@ async function generateAIReport() {
     btn.textContent = "🤖 AI 重新生成";
   }
 }
+
+// ============================================================
+// 💬 AI 问答对话（多轮 + 检索增强）
+// 与 AI 报告并列：报告是"一次性长文"，问答是"基于同一份数据的追问"。
+// 每轮用问题在 BM25 语料里检索 top-K 条真实评论注入，要求模型引用评论 id，
+// 回答里的引用编号渲染成可点击 chip，点开可看原评论。
+// ============================================================
+const CHAT_MAX_TURNS = 6;         // 随请求带回的历史消息上限（不含本轮的检索内容）
+const CHAT_TOP_K = 6;             // 每轮注入的真实评论条数
+let CHAT_BUSY = false;
+let CHAT_HISTORY = [];            // [{ role:"user"|"assistant", content }]
+const CHAT_USED_IDS = new Set();  // 已引用过的 review_id，后续轮次优先排除，避免反复引用同几条
+
+const CHAT_SYSTEM_PROMPT = `你是自走棋品类的产品分析师，正在帮用户解读本页 TapTap 评论数据（王者万象棋 vs 金铲铲之战）。
+
+规则：
+- 只依据【本页数据摘要】和本轮【检索到的真实评论】作答；两者都未覆盖的，直接写"当前数据未覆盖"，不做推测。
+- 引用到具体评论时，在对应句子末尾用方括号写出该评论的 id，如 [49790041]；没有具体引用就不要写方括号。
+- 引用数字须与数据一致，不做换算或改写。
+- 直接作答，不写开场白与结束语，不说明自身工作过程。
+- 不用"综上所述""值得注意的是""不难看出"等套话，也不用"赋能""抓手""闭环"等空泛行话。
+- 问题若与本页数据无关，说明你只能回答与这份数据相关的问题。`;
+
+// 用问题在 BM25 语料里取最相关的若干条真实评论
+async function retrieveForChat(question, topK) {
+  if (!DATA?.bm25) return [];
+  await ensureBm25Reviews();
+  const bm25 = DATA.bm25;
+  const idf = bm25.idf || {};
+  const avgdl = bm25.avgdl;
+
+  const _split = splitQuery(question);
+  let tokens = _split.tokens;
+  const literals = _split.literals;
+  const litLower = literals.map(s => s.toLowerCase());
+  if (tokens.length === 0 && literals.length === 0) tokens = [question];
+
+  const rank = (docs) => docs
+    .map(doc => {
+      const content = (doc.content || "").toLowerCase();
+      return {
+        doc,
+        score: bm25Score(tokens, doc, idf, avgdl),
+        litHit: litLower.filter(l => content.includes(l)).length,
+      };
+    })
+    .filter(x => x.score > 0 || x.litHit > 0)
+    .sort((a, b) => (b.litHit - a.litHit) || (b.score - a.score) || ((b.doc.ups || 0) - (a.doc.ups || 0)));
+
+  const all = bm25.reviews || [];
+  // 优先排除已引用过的评论；若因此一无所获，则退回全量（保证追问仍有证据）
+  let ranked = rank(all.filter(d => !CHAT_USED_IDS.has(String(d.id))));
+  if (ranked.length === 0) ranked = rank(all);
+  return ranked.slice(0, topK).map(x => x.doc);
+}
+
+// 本轮请求内容：数据摘要 + 检索到的真实评论 + 用户问题
+function buildChatTurnContent(question, docs) {
+  const context = (DATA && DATA.llm_context) || "（本页数据摘要不可用）";
+  const refBlock = docs.length
+    ? docs.map(d => `id=${d.id} · ${d.game} · ${d.score}星 · 点赞${d.ups} · 游玩${d.play_hours}h\n${d.content}`).join("\n---\n")
+    : "（本轮未检索到直接相关的评论）";
+  return `【本页数据摘要】\n${context}\n\n【检索到的真实评论】\n${refBlock}\n\n【用户问题】\n${question}`;
+}
+
+// 把回答中的引用编号 [49790041] 渲染成可点击 chip（仅当该 id 在本轮检索结果里）
+function linkifyCitations(html, refs) {
+  if (!refs.length) return html;
+  const ids = new Set(refs.map(d => String(d.id)));
+  return html.replace(/\[(\d{3,})\]/g, (m, id) =>
+    ids.has(id) ? `<button type="button" class="chat-cite" data-cite="${id}" title="查看该评论原文">${id}</button>` : m
+  );
+}
+
+function chatMsgEl(role, innerHtml) {
+  const el = document.createElement("div");
+  el.className = "chat-msg";
+  el.setAttribute("data-role", role);
+  el.innerHTML =
+    `<div class="chat-role">${role === "user" ? "🧑 你" : "🤖 AI"}</div>` +
+    `<div class="chat-bubble${role === "assistant" ? " markdown-body" : ""}">${innerHtml}</div>`;
+  return el;
+}
+
+function appendChatMessage(role, innerHtml) {
+  const box = document.getElementById("ai-chat-messages");
+  const hint = box.querySelector(".chat-hint");
+  if (hint) hint.remove();               // 首次发言后移除引导语
+  const el = chatMsgEl(role, innerHtml);
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+  return el;
+}
+
+// 引用来源折叠块：把本轮检索到的评论附在回答下方
+function renderChatRefs(docs) {
+  if (!docs.length) return "";
+  const cards = docs.map(d => {
+    const color = d.game === GAME_A ? COLOR_A : COLOR_B;
+    return `
+      <div class="chat-ref" data-cite-id="${_esc(String(d.id))}">
+        <div class="flex items-center flex-wrap gap-2 mb-1 text-[10px]">
+          <span class="chat-cite-badge">${_esc(String(d.id))}</span>
+          <span class="font-medium" style="color:${color}">${_esc(d.game)}</span>
+          <span class="text-amber-400">${"⭐".repeat(d.score || 0)}</span>
+          <span class="text-slate-500">@${_esc(d.nickname || "匿名")}</span>
+          <span class="text-slate-500">👍 ${d.ups || 0}</span>
+        </div>
+        <div class="text-slate-200 text-xs leading-relaxed whitespace-pre-wrap">${_esc(d.content || "")}</div>
+      </div>`;
+  }).join("");
+  return `<details class="chat-refs"><summary>📎 引用来源 · ${docs.length} 条</summary><div class="mt-2 space-y-2">${cards}</div></details>`;
+}
+
+function autoGrowChatInput() {
+  const el = document.getElementById("ai-chat-input");
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 140) + "px";
+}
+
+const CHAT_HINT_HTML = `<div class="chat-hint text-slate-500 text-xs leading-relaxed">
+  对话已清空。可继续就这份数据提问，例如「万象棋差评里反复出现的问题是什么？」。</div>`;
+
+function clearChat() {
+  if (CHAT_BUSY) return;
+  CHAT_HISTORY = [];
+  CHAT_USED_IDS.clear();
+  document.getElementById("ai-chat-messages").innerHTML = CHAT_HINT_HTML;
+  document.getElementById("ai-chat-status").textContent = "";
+  showToast("🗑️ 对话已清空");
+}
+
+async function chatSend() {
+  if (CHAT_BUSY) return;
+  const input = document.getElementById("ai-chat-input");
+  const q = (input.value || "").trim();
+  if (!q) return;
+
+  const cfg_raw = localStorage.getItem("taptap_llm_config");
+  if (!cfg_raw) { showToast("请先点击 🔑 API Key 配置大模型参数"); return; }
+  let cfg;
+  try { cfg = JSON.parse(cfg_raw); } catch { showToast("API 配置损坏，请重新保存"); return; }
+  if (!cfg.endpoint || !cfg.apikey || !cfg.model) { showToast("请填写完整的 Endpoint / Model / API Key"); return; }
+
+  trackEvt("chat_ask");   // 配置齐全、确实发起提问才计数
+
+  // 上屏用户消息 + 记入历史
+  input.value = "";
+  autoGrowChatInput();
+  appendChatMessage("user", _esc(q).replace(/\n/g, "<br>"));
+  CHAT_HISTORY.push({ role: "user", content: q });
+
+  const statusEl = document.getElementById("ai-chat-status");
+  const sendBtn = document.getElementById("btn-chat-send");
+  CHAT_BUSY = true;
+  sendBtn.disabled = true;
+  input.disabled = true;
+  statusEl.textContent = "检索评论并生成回答中…";
+
+  const pending = appendChatMessage("assistant", `<span class="text-slate-500">⏳ 正在检索相关评论并作答…</span>`);
+  const bubble = pending.querySelector(".chat-bubble");
+  const box = document.getElementById("ai-chat-messages");
+
+  try {
+    const docs = await retrieveForChat(q, CHAT_TOP_K);
+
+    // 组装消息：system + 最近若干轮历史（不含本轮）+ 本轮（含检索结果）
+    const hist = CHAT_HISTORY.slice(0, -1).slice(-CHAT_MAX_TURNS);
+    const messages = [{ role: "system", content: CHAT_SYSTEM_PROMPT }]
+      .concat(hist.map(m => ({ role: m.role, content: m.content })))
+      .concat([{ role: "user", content: buildChatTurnContent(q, docs) }]);
+
+    const resp = await fetch(normalizeEndpoint(cfg.endpoint), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cfg.apikey}`,
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages,
+        temperature: 0.3,
+        max_tokens: 1500,   // 问答回答控制在千字内，给足余量
+        thinking: { type: "disabled" },   // 关思考模式，否则 content 可能为 null
+      }),
+    });
+
+    if (!resp.ok) {
+      const t = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${t.slice(0, 200)}`);
+    }
+    const json = await resp.json();
+    const answer =
+      json.choices?.[0]?.message?.content ||
+      json.choices?.[0]?.message?.reasoning_content ||
+      json.output_text || "";
+    if (!answer) throw new Error("API 返回 200 但回答为空（可检查模型是否开启了思考模式）");
+
+    // 记录引用过的 id，后续轮次优先排除
+    docs.forEach(d => { if (d.id != null) CHAT_USED_IDS.add(String(d.id)); });
+
+    bubble.innerHTML = linkifyCitations(marked.parse(answer), docs) + renderChatRefs(docs);
+    CHAT_HISTORY.push({ role: "assistant", content: answer });
+    statusEl.textContent = `✅ 已回答${docs.length ? ` · 引用 ${docs.length} 条评论` : ""}`;
+  } catch (err) {
+    // 失败：从历史里移除本轮问题，避免污染后续上下文
+    CHAT_HISTORY.pop();
+    bubble.innerHTML =
+      `<div style="color:#EF4444">❌ 回答失败：${_esc(err.message)}</div>
+       <div style="color:#94a3b8;font-size:11px;margin-top:6px">
+       请求地址：${_esc(normalizeEndpoint(cfg.endpoint))}<br>
+       · 401 = API Key 无效 · 429 = 触发限流或额度不足，稍后再试<br>
+       · 超时/网络错误 = 换个网络或稍后重试 · 400 = 模型名不对</div>`;
+    statusEl.textContent = "❌ 失败";
+  } finally {
+    CHAT_BUSY = false;
+    sendBtn.disabled = false;
+    input.disabled = false;
+    input.focus();
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+// 引用 chip → 展开并高亮对应的引用来源卡（事件委托）
+document.addEventListener("click", function (e) {
+  const chip = e.target.closest(".chat-cite");
+  if (!chip) return;
+  const id = chip.getAttribute("data-cite");
+  const msg = chip.closest(".chat-msg");
+  if (!msg) return;
+  const refs = msg.querySelector(".chat-refs");
+  if (refs) refs.open = true;
+  const card = msg.querySelector(`.chat-ref[data-cite-id="${id}"]`);
+  if (card) {
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    card.classList.add("chat-ref-flash");
+    setTimeout(() => card.classList.remove("chat-ref-flash"), 1400);
+  }
+  trackEvt("chat_ref_click");
+});
 
 // ============================================================
 // IntersectionObserver —— 滚动渐入动效

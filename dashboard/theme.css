@@ -489,3 +489,85 @@ body::after {
   border-top: 1px dashed var(--chart-axis);
   margin: 1.5em 0;
 }
+
+/* ============================================
+ * 💬 AI 问答对话样式
+ * ============================================ */
+.chat-msg { display: flex; flex-direction: column; gap: 4px; }
+.chat-msg[data-role="user"] { align-items: flex-end; }
+.chat-msg[data-role="assistant"] { align-items: flex-start; }
+.chat-role {
+  font-size: 11px;
+  color: var(--chart-text);
+  opacity: 0.85;
+}
+
+.chat-bubble {
+  max-width: 92%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--chart-text-bold);
+  background: rgba(19, 26, 46, 0.6);
+  border: 1px solid rgba(125, 141, 184, 0.18);
+  word-break: break-word;
+}
+.chat-msg[data-role="user"] .chat-bubble {
+  background: var(--color-a-soft);
+  border-color: var(--color-a);
+}
+
+/* Markdown 首尾段落间距收紧，贴合气泡 */
+.chat-bubble.markdown-body > :first-child { margin-top: 0; }
+.chat-bubble.markdown-body > :last-child { margin-bottom: 0; }
+
+/* 引用编号 chip */
+.chat-cite {
+  display: inline-block;
+  margin: 0 1px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: Consolas, Monaco, Menlo, monospace;
+  vertical-align: baseline;
+  color: var(--color-accent);
+  background: rgba(167, 139, 250, 0.14);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.chat-cite:hover { background: rgba(167, 139, 250, 0.3); }
+
+/* 引用来源折叠块 */
+.chat-refs { margin-top: 8px; }
+.chat-refs > summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--chart-text);
+  list-style: none;
+  user-select: none;
+}
+.chat-refs > summary::-webkit-details-marker { display: none; }
+.chat-refs > summary::before { content: "▸ "; }
+.chat-refs[open] > summary::before { content: "▾ "; }
+
+.chat-ref {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(11, 17, 32, 0.6);
+  border: 1px solid rgba(125, 141, 184, 0.22);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.chat-ref-flash {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-a-glow);
+}
+.chat-cite-badge {
+  font-family: Consolas, Monaco, Menlo, monospace;
+  padding: 0 5px;
+  border-radius: 5px;
+  color: var(--color-accent);
+  background: rgba(167, 139, 250, 0.14);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
