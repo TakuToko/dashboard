@@ -555,6 +555,13 @@ body::after {
   transition: background 0.2s ease;
 }
 .chat-cite:hover { background: rgba(167, 139, 250, 0.3); }
+/* 解析不到真实评论的编号：弱化显示，点击后给出提示 */
+.chat-cite-muted {
+  color: var(--chart-text);
+  background: rgba(125, 141, 184, 0.12);
+  border-color: rgba(125, 141, 184, 0.3);
+}
+.chat-cite-muted:hover { background: rgba(125, 141, 184, 0.22); }
 
 /* 引用来源折叠块 */
 .chat-refs { margin-top: 8px; }

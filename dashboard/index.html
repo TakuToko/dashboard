@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>自走棋竞品分析 · 王者万象棋 vs 金铲铲之战</title>
+<title>弈见 Chessight · 自走棋竞品洞察 | 王者万象棋 vs 金铲铲之战</title>
 
 <!-- 🎨 主题配置（最先加载，后面所有颜色都从这里读） -->
 <script src="theme.js"></script>
@@ -169,15 +169,21 @@
     </span>
   </div>
 
+  <!-- 品牌署名：弈见 Chessight -->
+  <div class="mb-4 text-xs font-medium" style="letter-spacing:0.22em">
+    <span style="color:var(--chart-text)">弈见</span>
+    <span style="color:var(--chart-axis);margin:0 8px">|</span>
+    <span class="uppercase" style="color:var(--chart-text-bold)">Chessight</span>
+  </div>
+
   <h1 class="hero-title text-5xl md:text-6xl lg:text-7xl font-black leading-tight tracking-tight">
-    自走棋竞品分析
+    落子之间，听见意见
   </h1>
 
   <!-- 副标题 -->
   <p class="mt-4 text-slate-400 text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
-    基于 <span class="text-slate-300 font-medium" id="hero-review-count">-- 条</span> TapTap 真实用户评论 · 
-    王者万象棋 <span class="text-wzq font-semibold">首发</span> vs 
-    金铲铲之战 <span class="text-jcc font-semibold">运营五年</span>
+    从 <span class="text-slate-300 font-medium" id="hero-review-count">-- 条</span> TapTap 真实评论里，
+    解读王者万象棋的首发口碑
   </p>
 
   <!-- Hero 分隔装饰线 -->
@@ -937,7 +943,7 @@
 
 <footer class="text-center text-slate-600 text-xs pb-10 relative z-10">
   <div class="hero-divider w-32 mx-auto mb-6"></div>
-  竞品分析可视化 · ECharts + Tailwind · 基于 TapTap 真实评论数据
+  弈见 Chessight · 竞品洞察看板 · 基于 TapTap 真实评论数据
 </footer>
 
 <!-- ==================== JS: 数据加载 + 渲染 ==================== -->
@@ -2588,8 +2594,16 @@ function glossaryText() {
   games.forEach(game => {
     const d = g[game] || {};
     const parts = [];
-    if ((d["棋手"] || []).length) parts.push(`棋手（玩家操控的角色）：${d["棋手"].join("、")}`);
+    // 棋手元素可能是字符串，也可能是 { name, aliases:[...] }（别名 = 玩家口头叫法）
+    const runnerNames = (d["棋手"] || []).map(r => {
+      if (typeof r === "string") return r;
+      const name = (r && r.name) || "";
+      const al = ((r && r.aliases) || []).filter(Boolean);
+      return al.length ? `${name}（玩家常称${al.join("、")}）` : name;
+    }).filter(Boolean);
+    if (runnerNames.length) parts.push(`棋手（玩家操控的角色）：${runnerNames.join("、")}`);
     if ((d["棋子"] || []).length) parts.push(`棋子（对局中的英雄/单位）：${d["棋子"].join("、")}`);
+    if ((d["阵营"] || []).length) parts.push(`阵营（阵容体系分组，非人物名，勿当笔误纠正）：${d["阵营"].join("、")}`);
     (d["关键机制"] || []).forEach(m => { if (m && m.term) parts.push(`${m.term}：${m.desc || ""}`); });
     (d["易错点"] || []).forEach(e => {
       if (e && e.wrong && e.right) parts.push(`错误说法「${e.wrong}」应为「${e.right}」，以正确说法为准`);
@@ -2620,6 +2634,17 @@ function renderGlossary() {
   const chipList = (items) => items.map(t =>
     `<span class="px-1.5 py-0.5 rounded text-[11px]" style="background: var(--bg-surface); border: 1px solid var(--chart-axis)">${_esc(t)}</span>`
   ).join("");
+  // 棋手 chip：兼容字符串与 { name, aliases }（别名以浅色附在名字后）
+  const runnerChipList = (items) => items.map(r => {
+    let inner;
+    if (typeof r === "string") inner = _esc(r);
+    else {
+      const name = _esc((r && r.name) || "");
+      const al = ((r && r.aliases) || []).filter(Boolean);
+      inner = al.length ? `${name}<span class="text-slate-500">（${_esc(al.join("、"))}）</span>` : name;
+    }
+    return `<span class="px-1.5 py-0.5 rounded text-[11px]" style="background: var(--bg-surface); border: 1px solid var(--chart-axis)">${inner}</span>`;
+  }).join("");
 
   box.innerHTML = games.map(game => {
     const d = g[game] || {};
@@ -2632,14 +2657,19 @@ function renderGlossary() {
     const runners = (d["棋手"] || []).length ? `
       <div>
         <div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">♟️ 棋手 <span class="text-slate-500">（${d["棋手"].length}）</span></div>
-        <div class="flex flex-wrap gap-1.5">${chipList(d["棋手"])}</div>
+        <div class="flex flex-wrap gap-1.5">${runnerChipList(d["棋手"])}</div>
       </div>` : "";
     const pieces = (d["棋子"] || []).length ? `
       <div>
         <div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">🎴 棋子 <span class="text-slate-500">（${d["棋子"].length}）</span></div>
         <div class="flex flex-wrap gap-1.5">${chipList(d["棋子"])}</div>
       </div>` : "";
-    const hasAny = runners || pieces || mech || errs;
+    const factions = (d["阵营"] || []).length ? `
+      <div>
+        <div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">🏳️ 阵营 <span class="text-slate-500">（${d["阵营"].length}）</span></div>
+        <div class="flex flex-wrap gap-1.5">${chipList(d["阵营"])}</div>
+      </div>` : "";
+    const hasAny = runners || pieces || factions || mech || errs;
     if (!hasAny) return `<div class="text-slate-500 py-2">《${_esc(game)}》：暂未录入术语</div>`;
     return `
       <div class="pb-3 mb-1" style="border-bottom: 1px dashed var(--chart-axis)">
@@ -2647,6 +2677,7 @@ function renderGlossary() {
         <div class="space-y-3">
           ${runners}
           ${pieces}
+          ${factions}
           ${mech ? `<div><div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">🔧 关键机制</div>${mech}</div>` : ""}
           ${errs ? `<div><div class="text-[11px] font-medium mb-1" style="color: var(--color-accent)">⚠️ 易错点</div>${errs}</div>` : ""}
         </div>
@@ -2726,13 +2757,20 @@ function buildChatTurnContent(question, docs) {
   return `【本页数据摘要】\n${context}\n\n【检索到的真实评论】\n${refBlock}\n\n【用户问题】\n${question}`;
 }
 
-// 把回答中的引用编号 [49790041] 渲染成可点击 chip（仅当该 id 在本轮检索结果里）
+// 把回答中的引用编号 [49790041] / 【49790041】 渲染成可点击 chip。
+// 可解析范围 = 本轮检索结果 ∪ 本次对话历轮检索过的评论 id（CHAT_USED_IDS）：
+// 因此模型复述历史回答里的编号时也能点开 —— 对应卡片就在那一轮的消息里。
+// 解析不到真实评论的编号渲染为弱化 chip，点击时给出明确提示，而非静默无反应。
 function linkifyCitations(html, refs) {
-  if (!refs.length) return html;
   const ids = new Set(refs.map(d => String(d.id)));
-  return html.replace(/\[(\d{3,})\]/g, (m, id) =>
-    ids.has(id) ? `<button type="button" class="chat-cite" data-cite="${id}" title="查看该评论原文">${id}</button>` : m
-  );
+  CHAT_USED_IDS.forEach(id => ids.add(id));
+  return html.replace(/\[(\d{3,})\]|【(\d{3,})】/g, (m, a, b) => {
+    const id = a || b;
+    if (ids.has(id)) {
+      return `<button type="button" class="chat-cite" data-cite="${id}" title="查看该评论原文">${id}</button>`;
+    }
+    return `<button type="button" class="chat-cite chat-cite-muted" data-cite="${id}" title="该评论不在本次对话检索到的评论中，无原文可展开">${id}</button>`;
+  });
 }
 
 function chatMsgEl(role, innerHtml) {
@@ -2885,21 +2923,25 @@ async function chatSend() {
   }
 }
 
-// 引用 chip → 展开并高亮对应的引用来源卡（事件委托）
+// 引用 chip → 在整段对话里查找对应的引用来源卡，展开并高亮（事件委托）
+// 跨轮次查找：历史回答里引用的评论，卡片在那一轮的消息里，同样可跳转过去。
 document.addEventListener("click", function (e) {
   const chip = e.target.closest(".chat-cite");
   if (!chip) return;
   const id = chip.getAttribute("data-cite");
-  const msg = chip.closest(".chat-msg");
-  if (!msg) return;
-  const refs = msg.querySelector(".chat-refs");
-  if (refs) refs.open = true;
-  const card = msg.querySelector(`.chat-ref[data-cite-id="${id}"]`);
-  if (card) {
-    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    card.classList.add("chat-ref-flash");
-    setTimeout(() => card.classList.remove("chat-ref-flash"), 1400);
+  const box = document.getElementById("ai-chat-messages");
+  if (!box) return;
+  const card = box.querySelector(`.chat-ref[data-cite-id="${id}"]`);
+  if (!card) {
+    // 解析不到真实评论（多为模型自行编造的编号）→ 给出明确提示，避免"点了没反应"
+    showToast(`该评论（id ${id}）不在本次对话检索到的评论中，无原文可展开`);
+    return;
   }
+  const refs = card.closest(".chat-refs");
+  if (refs) refs.open = true;
+  card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  card.classList.add("chat-ref-flash");
+  setTimeout(() => card.classList.remove("chat-ref-flash"), 1400);
   trackEvt("chat_ref_click");
 });
 
