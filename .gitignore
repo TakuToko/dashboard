@@ -6,3 +6,4 @@ stop_point.txt
 .env
 .env.local
 data/phrase_cache_*.json  
+worker/.wrangler/
