@@ -595,3 +595,68 @@ body::after {
   background: rgba(167, 139, 250, 0.14);
   border: 1px solid rgba(167, 139, 250, 0.3);
 }
+
+/* ============================================
+ * 🤖 AI 分析模块 —— 形态 Tab / 设置分段 / 空态
+ * ============================================ */
+
+/* 形态切换 Tab（报告 / 问答）：沿用导航胶囊的视觉语言，保持全站一致 */
+.ai-tab {
+  padding: 7px 16px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chart-text);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.ai-tab:hover { color: var(--chart-text-bold); background: rgba(125, 141, 184, 0.12); }
+.ai-tab.active {
+  color: #fff;
+  background: var(--color-accent);
+  box-shadow: 0 0 16px -4px var(--color-accent);
+}
+
+/* 设置条内的分段 Tab（连接 / 提示词 / 术语表） */
+.ai-set-tab {
+  padding: 5px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--chart-text);
+  background: rgba(125, 141, 184, 0.10);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.ai-set-tab:hover { color: var(--chart-text-bold); background: rgba(125, 141, 184, 0.18); }
+.ai-set-tab.active { color: #fff; background: var(--color-accent); }
+
+/* 空态引导块（还没生成报告时的占位） */
+.ai-empty {
+  text-align: center;
+  padding: 34px 20px;
+  border-radius: 14px;
+  border: 1px dashed rgba(125, 141, 184, 0.3);
+  background: var(--ui-card-soft-b);
+}
+
+/* 空态推荐问题 chip：点一下直接发问，降低"不知道问什么"的门槛 */
+.chat-suggest-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chat-suggest {
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--color-accent);
+  background: rgba(167, 139, 250, 0.10);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.chat-suggest:hover {
+  background: rgba(167, 139, 250, 0.22);
+  transform: translateY(-1px);
+}

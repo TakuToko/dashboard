@@ -247,6 +247,7 @@
     <a href="#module-voice" class="nav-pill" data-nav="module-voice">③ 玩家声音</a>
     <a href="#module-persona" class="nav-pill" data-nav="module-persona">④ 玩家画像</a>
     <a href="#module-conclusion" class="nav-pill" data-nav="module-conclusion">⑤ 核心结论</a>
+    <a href="#module-ai" class="nav-pill" data-nav="module-ai">⑥ AI 分析</a>
   </div>
 </nav>
 
@@ -328,6 +329,7 @@
         <a href="#module-voice" class="nav-pill-v" data-nav="module-voice"><span class="nav-idx">3</span>玩家声音</a>
         <a href="#module-persona" class="nav-pill-v" data-nav="module-persona"><span class="nav-idx">4</span>玩家画像</a>
         <a href="#module-conclusion" class="nav-pill-v" data-nav="module-conclusion"><span class="nav-idx">5</span>核心结论</a>
+        <a href="#module-ai" class="nav-pill-v" data-nav="module-ai"><span class="nav-idx">6</span>AI 分析</a>
       </nav>
     </div>
   </aside>
@@ -780,103 +782,12 @@
   <section id="section-conclusion" class="glass p-7 reveal">
     <div class="flex items-center justify-between mb-5 gap-4 flex-wrap">
       <h2 class="section-title text-xl font-semibold">📋 研究结论 & 行动建议</h2>
-      <div class="flex items-center gap-2">
-        <!-- API Key 设置 -->
-        <details class="relative">
-          <summary class="cursor-pointer px-3 py-1.5 rounded-lg text-xs border hover:opacity-80 transition list-none flex items-center gap-1"
-            style="border-color: var(--chart-axis); color: var(--chart-text-bold)">
-            🔑 API Key
-          </summary>
-          <div class="absolute right-0 top-full mt-2 w-80 p-4 rounded-lg z-50"
-            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); box-shadow: 0 10px 30px rgba(0,0,0,0.3)">
-            <div class="text-xs font-medium mb-2" style="color: var(--chart-text-bold)">大模型 API 配置</div>
-            <div class="text-[11px] text-slate-400 mb-2">支持豆包/火山引擎、OpenAI、通义千问等兼容 OpenAI 协议的 API</div>
-            <select id="llm-provider" onchange="onLLMProviderChange()" class="w-full mb-2 px-2 py-1.5 rounded text-xs outline-none"
-              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
-              <option value="deepseek" selected>DeepSeek（推荐）</option>
-              <option value="doubao">豆包（火山引擎）</option>
-              <option value="openai">OpenAI / 兼容</option>
-              <option value="qwen">通义千问</option>
-              <option value="custom">自定义</option>
-            </select>
-            <input id="llm-endpoint" type="text" placeholder="API Endpoint URL" class="w-full mb-2 px-2 py-1.5 rounded text-xs outline-none"
-              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
-            <input id="llm-model" type="text" placeholder="Model ID（DeepSeek 填 deepseek-flash）" class="w-full mb-2 px-2 py-1.5 rounded text-xs outline-none"
-              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
-            <input id="llm-apikey" type="password" placeholder="API Key" class="w-full mb-2 px-2 py-1.5 rounded text-xs outline-none"
-              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
-            <button onclick="saveLLMConfig()" class="w-full py-1.5 rounded text-xs font-medium hover:opacity-90"
-              style="background: var(--color-accent); color: #fff">💾 保存到浏览器</button>
-          </div>
-        </details>
-
-        <!-- 提示词设置 -->
-        <details class="relative">
-          <summary class="cursor-pointer px-3 py-1.5 rounded-lg text-xs border hover:opacity-80 transition list-none flex items-center gap-1"
-            style="border-color: var(--chart-axis); color: var(--chart-text-bold)">
-            📝 提示词
-          </summary>
-          <div class="absolute right-0 top-full mt-2 w-[520px] p-4 rounded-lg z-50 max-h-[85vh] overflow-y-auto"
-            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); box-shadow: 0 10px 30px rgba(0,0,0,0.3)">
-
-            <!-- 📚 模板选择 -->
-            <div class="flex items-center gap-2 mb-3 pb-3" style="border-bottom: 1px dashed var(--chart-axis)">
-              <span class="text-xs font-medium" style="color: var(--chart-text-bold)">📚 模板</span>
-              <select id="prompt-template" onchange="applyPromptTemplate(this.value)"
-                class="flex-1 px-2 py-1.5 rounded text-xs outline-none"
-                style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
-                <option value="">—— 选择一个预设模板快速填充 ——</option>
-                <option value="default">🎯 默认模板（4章完整报告）</option>
-                <option value="brief">📝 简要版（300字精简）</option>
-                <option value="strategy">🏆 策略版（深挖可落地动作）</option>
-                <option value="painpoint">⚠️ 痛点版（聚焦差评根因）</option>
-              </select>
-            </div>
-
-            <div class="text-xs font-medium mb-1" style="color: var(--chart-text-bold)">System Prompt</div>
-            <textarea id="prompt-system" rows="8" class="w-full mb-3 px-2 py-1.5 rounded text-xs outline-none resize-y"
-              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></textarea>
-
-            <div class="text-xs font-medium mb-1 flex items-center gap-2" style="color: var(--chart-text-bold)">
-              User Prompt 模板
-            </div>
-            <textarea id="prompt-user" rows="12" class="w-full mb-3 px-2 py-1.5 rounded text-xs outline-none resize-y font-mono leading-relaxed"
-              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></textarea>
-
-            <div class="flex gap-2">
-              <button onclick="savePromptConfig()" class="flex-1 py-1.5 rounded text-xs font-medium hover:opacity-90"
-                style="background: var(--color-accent); color: #fff">💾 保存当前</button>
-              <button onclick="resetPromptConfig()" class="flex-1 py-1.5 rounded text-xs font-medium hover:opacity-80"
-                style="border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">↺ 重置默认</button>
-            </div>
-          </div>
-        </details>
-        <!-- 📖 术语表（只读查看，真源为 dashboard/glossary.js） -->
-        <details class="relative">
-          <summary class="cursor-pointer px-3 py-1.5 rounded-lg text-xs border hover:opacity-80 transition list-none flex items-center gap-1"
-            style="border-color: var(--chart-axis); color: var(--chart-text-bold)">
-            📖 术语表
-          </summary>
-          <div class="absolute right-0 top-full mt-2 w-[420px] p-4 rounded-lg z-50 max-h-[75vh] overflow-y-auto text-xs"
-            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); box-shadow: 0 10px 30px rgba(0,0,0,0.3)">
-            <div class="flex items-center justify-between mb-2 gap-2">
-              <span class="font-medium" style="color: var(--chart-text-bold)">领域术语表（只读）</span>
-              <span class="text-[10px] text-slate-500 whitespace-nowrap">仅维护《王者万象棋》</span>
-            </div>
-            <p class="text-[11px] text-slate-400 mb-3 leading-relaxed">
-              用于给 AI 提供可核实的事实口径，减少把玩家错误说法当结论。
-              如需修改，请编辑仓库中的 <code>dashboard/glossary.js</code>，提交部署后生效。
-            </p>
-            <div id="glossary-content" class="space-y-3"></div>
-          </div>
-        </details>
-        <!-- AI 生成按钮 -->
-        <button id="btn-ai-report" onclick="generateAIReport()"
-          class="px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 transition inline-flex items-center gap-1"
-          style="background: var(--color-accent); color: #fff">
-          🤖 AI 生成报告
-        </button>
-      </div>
+      <!-- AI 报告与追问都已收进模块 ⑥「AI 分析」，这里只留入口指引 -->
+      <a href="#module-ai"
+        class="px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 transition inline-flex items-center gap-1"
+        style="border: 1px solid var(--color-accent); color: var(--color-accent)">
+        🤖 用 AI 解读这份数据（⑥ AI 分析）→
+      </a>
     </div>
 
     <!-- 📊 规则化结论（万象棋主线 + 竞品镜鉴） -->
@@ -887,37 +798,156 @@
       <span class="text-sm font-semibold" style="color: var(--color-accent)">🎯 行动建议</span>
     </div>
     <div id="recommendations-cards" class="space-y-3 mb-6"></div>
+  </section>
+</div><!-- /模块 ⑤: 核心结论 -->
 
-    <!-- 🤖 AI 生成的自然语言报告 -->
-    <div id="ai-report" class="hidden">
-      <div class="flex items-center gap-2 mb-3">
-        <span class="text-lg">🤖</span>
-        <span class="text-sm font-semibold" style="color: var(--color-accent)">AI 综合分析报告</span>
-        <span id="ai-report-status" class="text-xs text-slate-500"></span>
+<!-- ==================== 模块 ⑥: AI 分析 ==================== -->
+<!-- 报告与问答共用同一底座（模型连接、提示词、术语表、事实纪律、引用回溯），
+     故收进同一模块：设置收成 1 个入口，两种形态用 Tab 切换。 -->
+<div id="module-ai" class="module-block">
+  <div class="module-head">
+    <span class="module-index">6</span>
+    <span class="module-title">AI 分析</span>
+    <span class="module-line"></span>
+  </div>
+
+  <section class="glass p-7 reveal">
+
+    <!-- ⚙️ 设置条：连接 / 提示词 / 术语表 = 喂给模型的三种输入 -->
+    <details id="ai-settings" class="mb-5">
+      <summary class="cursor-pointer px-3.5 py-2 rounded-lg text-xs border hover:opacity-80 transition list-none inline-flex items-center gap-1.5"
+        style="border-color: var(--chart-axis); color: var(--chart-text-bold)">
+        ⚙️ AI 分析设置
+        <span class="text-slate-500">· 连接 / 提示词 / 术语表</span>
+      </summary>
+
+      <div class="mt-3 p-4 rounded-xl" style="background: var(--bg-surface); border: 1px solid var(--chart-axis)">
+        <!-- 分段 Tab -->
+        <div class="flex items-center gap-1.5 mb-4 pb-3 flex-wrap" style="border-bottom: 1px dashed var(--chart-axis)">
+          <button type="button" class="ai-set-tab active" data-ai-set="conn">🔌 连接</button>
+          <button type="button" class="ai-set-tab" data-ai-set="prompt">📝 提示词</button>
+          <button type="button" class="ai-set-tab" data-ai-set="kb">📖 术语表</button>
+        </div>
+
+        <!-- ① 连接：大模型 API 参数 -->
+        <div id="ai-set-panel-conn">
+          <div class="text-xs font-medium mb-2" style="color: var(--chart-text-bold)">大模型 API 配置</div>
+          <div class="text-[11px] text-slate-400 mb-3">支持 DeepSeek、豆包（火山引擎）、OpenAI、通义千问等兼容 OpenAI 协议的 API。密钥只存在本机浏览器，不上传。</div>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <select id="llm-provider" onchange="onLLMProviderChange()" class="px-2 py-1.5 rounded text-xs outline-none"
+              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+              <option value="deepseek" selected>DeepSeek（推荐）</option>
+              <option value="doubao">豆包（火山引擎）</option>
+              <option value="openai">OpenAI / 兼容</option>
+              <option value="qwen">通义千问</option>
+              <option value="custom">自定义</option>
+            </select>
+            <input id="llm-model" type="text" placeholder="Model ID（DeepSeek 填 deepseek-flash）" class="px-2 py-1.5 rounded text-xs outline-none"
+              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+            <input id="llm-endpoint" type="text" placeholder="API Endpoint URL" class="sm:col-span-2 px-2 py-1.5 rounded text-xs outline-none"
+              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+            <input id="llm-apikey" type="password" placeholder="API Key" class="sm:col-span-2 px-2 py-1.5 rounded text-xs outline-none"
+              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+          </div>
+          <button onclick="saveLLMConfig()" class="mt-3 px-4 py-1.5 rounded text-xs font-medium hover:opacity-90"
+            style="background: var(--color-accent); color: #fff">💾 保存到浏览器</button>
+        </div>
+
+        <!-- ② 提示词 -->
+        <div id="ai-set-panel-prompt" class="hidden">
+          <div class="flex items-center gap-2 mb-3 pb-3" style="border-bottom: 1px dashed var(--chart-axis)">
+            <span class="text-xs font-medium" style="color: var(--chart-text-bold)">📚 模板</span>
+            <select id="prompt-template" onchange="applyPromptTemplate(this.value)"
+              class="flex-1 px-2 py-1.5 rounded text-xs outline-none"
+              style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+              <option value="">—— 选择一个预设模板快速填充 ——</option>
+              <option value="default">🎯 默认模板（4章完整报告）</option>
+              <option value="brief">📝 简要版（300字精简）</option>
+              <option value="strategy">🏆 策略版（深挖可落地动作）</option>
+              <option value="painpoint">⚠️ 痛点版（聚焦差评根因）</option>
+            </select>
+          </div>
+
+          <div class="text-xs font-medium mb-1" style="color: var(--chart-text-bold)">System Prompt</div>
+          <textarea id="prompt-system" rows="8" class="w-full mb-3 px-2 py-1.5 rounded text-xs outline-none resize-y"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></textarea>
+
+          <div class="text-xs font-medium mb-1" style="color: var(--chart-text-bold)">User Prompt 模板</div>
+          <textarea id="prompt-user" rows="12" class="w-full mb-3 px-2 py-1.5 rounded text-xs outline-none resize-y font-mono leading-relaxed"
+            style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></textarea>
+
+          <div class="flex gap-2">
+            <button onclick="savePromptConfig()" class="flex-1 py-1.5 rounded text-xs font-medium hover:opacity-90"
+              style="background: var(--color-accent); color: #fff">💾 保存当前</button>
+            <button onclick="resetPromptConfig()" class="flex-1 py-1.5 rounded text-xs font-medium hover:opacity-80"
+              style="border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">↺ 重置默认</button>
+          </div>
+        </div>
+
+        <!-- ③ 术语表（只读查看，真源为 dashboard/glossary.js） -->
+        <div id="ai-set-panel-kb" class="hidden text-xs">
+          <div class="flex items-center justify-between mb-2 gap-2">
+            <span class="font-medium" style="color: var(--chart-text-bold)">领域术语表（只读）</span>
+            <span class="text-[10px] text-slate-500 whitespace-nowrap">仅维护《王者万象棋》</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-3 leading-relaxed">
+            用于给 AI 提供可核实的事实口径，减少把玩家错误说法当结论。
+            如需修改，请编辑仓库中的 <code>dashboard/glossary.js</code>，提交部署后生效。
+          </p>
+          <div id="glossary-content" class="space-y-3"></div>
+        </div>
       </div>
-      <div id="ai-report-content" class="p-5 rounded-lg text-sm leading-relaxed whitespace-pre-wrap"
-        style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)"></div>
+    </details>
+
+    <!-- 形态切换：报告是"一次性长文"，问答是"基于同一份数据的追问" -->
+    <div class="inline-flex items-center gap-1 mb-4 p-1 rounded-full"
+      style="background: var(--ui-card-soft-b); border: 1px solid rgba(125,141,184,.18)">
+      <button type="button" class="ai-tab active" data-ai-tab="report">📄 AI 报告</button>
+      <button type="button" class="ai-tab" data-ai-tab="chat">💬 AI 问答</button>
     </div>
 
-    <!-- 💬 AI 问答对话（基于本页数据的多轮追问） -->
-    <div id="ai-chat" class="mt-6">
+    <!-- Tab A：AI 报告 -->
+    <div id="ai-tab-report">
+      <div class="flex items-center gap-2 mb-4 flex-wrap">
+        <button id="btn-ai-report" onclick="generateAIReport()"
+          class="px-4 py-2 rounded-lg text-xs font-medium hover:opacity-90 transition inline-flex items-center gap-1"
+          style="background: var(--color-accent); color: #fff">🤖 生成报告</button>
+        <button id="btn-ai-report-copy" onclick="copyAIReport()"
+          class="hidden px-3 py-2 rounded-lg text-xs hover:opacity-80 transition"
+          style="border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">📋 复制 Markdown</button>
+        <span id="ai-report-status" class="text-xs text-slate-500"></span>
+      </div>
+
+      <!-- 空态引导 -->
+      <div id="ai-report-empty" class="ai-empty">
+        <div class="text-3xl mb-2">📄</div>
+        <div class="text-sm font-medium mb-1" style="color: var(--chart-text-bold)">还没有生成报告</div>
+        <p class="text-xs text-slate-500 leading-relaxed" style="max-width:480px;margin:0 auto">
+          点击「🤖 生成报告」，模型会依据本页的规则化结论、原因短语与真实评论，写出一份可直接引用的分析报告。
+          报告会保存在本机，下次打开自动恢复。需先在 ⚙️ AI 分析设置 → 🔌 连接 里填好大模型参数。
+        </p>
+      </div>
+
+      <!-- 报告正文（markdown 渲染） -->
+      <div id="ai-report" class="hidden">
+        <div class="p-5 rounded-lg text-sm leading-relaxed"
+          style="background: var(--bg-surface); border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">
+          <div id="ai-report-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab B：AI 问答 -->
+    <div id="ai-tab-chat" class="hidden">
       <div class="flex items-center gap-2 mb-3 flex-wrap">
-        <span class="text-lg">💬</span>
-        <span class="text-sm font-semibold" style="color: var(--color-accent)">AI 问答</span>
-        <span class="text-xs text-slate-500">基于本页真实评论作答 · 可点引用查看原文</span>
+        <span class="text-xs text-slate-500">基于本页真实评论作答 · 回答中的编号可点开查看原文</span>
         <span id="ai-chat-status" class="text-xs text-slate-500"></span>
         <button id="btn-chat-clear" onclick="clearChat()"
           class="ml-auto px-3 py-1.5 rounded-lg text-xs hover:opacity-80 transition"
           style="border: 1px solid var(--chart-axis); color: var(--chart-text-bold)">🗑️ 清空对话</button>
       </div>
       <div class="rounded-lg overflow-hidden" style="background: var(--bg-surface); border: 1px solid var(--chart-axis)">
-        <div id="ai-chat-messages" class="p-4 space-y-4 max-h-[520px] overflow-y-auto">
-          <div class="chat-hint text-slate-500 text-xs leading-relaxed">
-            在这里就这份数据提问，例如「万象棋差评里反复出现的问题是什么？」「新手期玩家的主要不满有哪些？」。
-            回答会检索本页真实评论并标注引用编号，点击编号可展开对应原评论。
-            需先在右上角 🔑 API Key 配置中填好大模型参数。
-          </div>
-        </div>
+        <div id="ai-chat-messages" class="p-4 space-y-4 max-h-[520px] overflow-y-auto"></div>
         <div class="p-3" style="border-top: 1px solid var(--chart-axis)">
           <div class="flex gap-2 items-end">
             <textarea id="ai-chat-input" rows="2"
@@ -934,7 +964,7 @@
       </div>
     </div>
   </section>
-</div><!-- /模块 ⑤: 核心结论 -->
+</div><!-- /模块 ⑥: AI 分析 -->
 
   </div><!-- /内容区 -->
 </div><!-- /左侧竖栏 + 内容区 -->
@@ -1347,9 +1377,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     updateThemeToggleUI();  // 🆕 同步深浅色开关的图标/文案
     loadLLMConfig();     // 把存过的 API Key 自动填回表单
-    renderGlossary();    // 🆕 术语表弹层（只读，读 glossary.js）
+    renderGlossary();    // 🆕 术语表（只读，读 glossary.js）
+    const chatBox = document.getElementById("ai-chat-messages");
+    if (chatBox) chatBox.innerHTML = CHAT_HINT_HTML;   // 🆕 问答空态 + 推荐问题
     await loadVersionList();
     await loadDefaultData();
+    restoreReportCache();   // 🆕 本机缓存的报告直接显出来（依赖 DATA 判断是否为旧版本）
   } catch (err) {
     console.error("❌ 初始化失败:", err);
     showLoadState("error", err.message);
@@ -2463,23 +2496,28 @@ function resetPromptConfig() {
 // —— LLM 调用 + 流式渲染 ——
 async function generateAIReport() {
   const cfg_raw = localStorage.getItem("taptap_llm_config");
-  if (!cfg_raw) { alert("请先点击 🔑 API Key 配置大模型参数"); return; }
+  if (!cfg_raw) { alert("请先展开 ⚙️ AI 分析设置 → 🔌 连接，填好大模型参数"); return; }
   let cfg;
   try { cfg = JSON.parse(cfg_raw); } catch { alert("配置损坏"); return; }
   if (!cfg.endpoint || !cfg.apikey || !cfg.model) { alert("请填写完整的 Endpoint / Model / API Key"); return; }
 
   trackEvt("ai_ask");   // 配置齐全、确实发起了问答才计数，避免把"点了但没配好"也算一次
 
-  // UI 状态
+  // UI 状态：切到「AI 报告」Tab，收起旧报告，正文交给 showAIReport 状态机渲染
+  showAITab("report");
   const btn = document.getElementById("btn-ai-report");
-  const reportDiv = document.getElementById("ai-report");
   const statusDiv = document.getElementById("ai-report-status");
   const contentDiv = document.getElementById("ai-report-content");
-  reportDiv.classList.remove("hidden");
+  const emptyDiv = document.getElementById("ai-report-empty");
+  const reportDiv = document.getElementById("ai-report");
+  const copyBtn = document.getElementById("btn-ai-report-copy");
+  if (emptyDiv) emptyDiv.classList.add("hidden");
+  if (reportDiv) reportDiv.classList.add("hidden");
+  if (copyBtn) copyBtn.classList.add("hidden");
   btn.disabled = true;
   btn.textContent = "⏳ 生成中...";
   statusDiv.textContent = "调用大模型中...";
-  contentDiv.textContent = "";
+  contentDiv.innerHTML = "";
 
   // 构建 prompt（从配置读取 + 占位符替换）
   const context = DATA.llm_context || "（上下文不可用）";
@@ -2547,35 +2585,108 @@ async function generateAIReport() {
       throw new Error("API 返回了 200 但 content 为空。调试信息：" + hint);
     }
 
-    // ✅ 用真正的 Markdown 渲染器，所有 # / ** / - / ` 都能正确处理
-    // 先把 contentDiv 切到 markdown 模式（允许 HTML 注入）
-    contentDiv.classList.add("markdown-body");
-
     // 输出被 max_tokens 掐断时明确提示，避免用户以为报告本来就写到一半
     const truncated = json.choices?.[0]?.finish_reason === "length";
-    const truncNote = truncated
-      ? `<div style="color:#F59E0B;font-size:12px;margin-bottom:10px;padding:8px;
-           border-radius:6px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3)">
-           ⚠️ 报告正文触达 max_tokens 上限被截断（输出不完整）。建议缩短字数要求，或调大请求里的 max_tokens。
-         </div>`
-      : "";
-
-    contentDiv.innerHTML = truncNote + marked.parse(report);
-
-    statusDiv.textContent = truncated
-      ? `⚠️ 已生成但被截断 · 共 ${report.length} 字符`
-      : `✅ 已生成 · 共 ${report.length} 字符`;
+    showAIReport(report, { truncated });
+    saveReportCache(report, { truncated });   // 存本机：下次打开自动恢复
   } catch (err) {
-    contentDiv.innerHTML = `<div style="color:#EF4444">❌ 生成失败: ${err.message}</div>
-      <div style="color:var(--chart-text);font-size:11px;margin-top:8px">
-      正在请求：${normalizeEndpoint(cfg.endpoint)}<br>
-      · 404 = 接口地址不对。DeepSeek 要填 https://api.deepseek.com/chat/completions（只填 https://api.deepseek.com 也可，会自动补全）<br>
-      · 401 = API Key 无效<br>
-      · 400 = 模型名不对，DeepSeek 用 deepseek-flash 或 deepseek-v4-pro</div>`;
-    statusDiv.textContent = "❌ 失败";
+    showAIReport("", { error: err.message, endpoint: normalizeEndpoint(cfg.endpoint) });
   } finally {
     btn.disabled = false;
-    btn.textContent = "🤖 AI 重新生成";
+    btn.textContent = "🤖 重新生成";
+  }
+}
+
+// ============================================================
+// 📄 AI 报告的持久化与渲染
+// 报告是一次性长文、单次生成成本不低：存进 localStorage，下次打开自动恢复；
+// 换数据版本时标注"旧版本"，而不是静默丢掉。
+// ============================================================
+const REPORT_CACHE_KEY = "taptap_ai_report";
+let _reportCache = null;   // 最近一次报告：{ report, meta, version_id }
+
+function reportTruncNote() {
+  return `<div style="color:#F59E0B;font-size:12px;margin-bottom:10px;padding:8px;
+    border-radius:6px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3)">
+    ⚠️ 报告正文触达 max_tokens 上限被截断（输出不完整）。建议缩短字数要求，或调大请求里的 max_tokens。
+  </div>`;
+}
+
+// 报告正文的唯一渲染入口：空态/正文切换、markdown 渲染、截断与过期提示、失败提示
+// meta = { truncated?, cached?, stale?, error?, endpoint? }
+function showAIReport(report, meta) {
+  meta = meta || {};
+  const emptyDiv = document.getElementById("ai-report-empty");
+  const wrapDiv = document.getElementById("ai-report");
+  const contentDiv = document.getElementById("ai-report-content");
+  const statusDiv = document.getElementById("ai-report-status");
+  const copyBtn = document.getElementById("btn-ai-report-copy");
+  if (!wrapDiv || !contentDiv) return;
+
+  if (meta.error) {
+    if (emptyDiv) emptyDiv.classList.add("hidden");
+    wrapDiv.classList.remove("hidden");
+    contentDiv.className = "";
+    contentDiv.innerHTML = `<div style="color:#EF4444">❌ 生成失败：${_esc(meta.error)}</div>
+      <div style="color:var(--chart-text);font-size:11px;margin-top:8px">
+      正在请求：${_esc(meta.endpoint || "")}<br>
+      · 404 = 接口地址不对。DeepSeek 要填 https://api.deepseek.com/chat/completions（只填域名也可，会自动补全）<br>
+      · 401 = API Key 无效 · 429 = 触发限流或额度不足，稍后再试<br>
+      · 400 = 模型名不对，DeepSeek 用 deepseek-flash 或 deepseek-v4-pro</div>`;
+    statusDiv.textContent = "❌ 失败";
+    if (copyBtn) copyBtn.classList.add("hidden");
+    return;
+  }
+  if (!report) return;
+
+  if (emptyDiv) emptyDiv.classList.add("hidden");
+  wrapDiv.classList.remove("hidden");
+  contentDiv.className = "markdown-body";   // 真 Markdown 渲染器：标题/列表/粗体都正确
+  contentDiv.innerHTML = (meta.truncated ? reportTruncNote() : "") + marked.parse(report);
+
+  const notes = [];
+  if (meta.cached) notes.push("本机缓存");
+  if (meta.stale) notes.push("数据已更新，此为旧版本报告");
+  const suffix = notes.length ? ` · ${notes.join(" · ")}` : "";
+  statusDiv.textContent = (meta.truncated ? "⚠️ 已生成但被截断" : "✅ 已生成")
+    + ` · 共 ${report.length} 字符${suffix}`;
+  if (copyBtn) copyBtn.classList.remove("hidden");
+}
+
+function saveReportCache(report, meta) {
+  const entry = {
+    report,
+    meta: { truncated: !!(meta && meta.truncated), at: Date.now() },
+    version_id: (DATA && DATA.version_id) || "",
+  };
+  _reportCache = entry;
+  try { localStorage.setItem(REPORT_CACHE_KEY, JSON.stringify(entry)); } catch {}
+}
+
+// 启动时恢复：有缓存就直接显出来（换版本时标注"旧版本"，不静默丢弃）
+function restoreReportCache() {
+  try {
+    const entry = JSON.parse(localStorage.getItem(REPORT_CACHE_KEY) || "null");
+    if (!entry || !entry.report) return;
+    _reportCache = entry;
+    showAIReport(entry.report, {
+      truncated: !!(entry.meta && entry.meta.truncated),
+      cached: true,
+      stale: entry.version_id !== ((DATA && DATA.version_id) || ""),
+    });
+  } catch {}
+}
+
+// 复制报告为 Markdown 原文（比复制渲染结果更好二次利用）
+async function copyAIReport() {
+  const text = _reportCache && _reportCache.report;
+  if (!text) { showToast("暂无报告可复制"); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("📋 报告已复制为 Markdown");
+    trackEvt("ai_report_copy");
+  } catch {
+    showToast("复制失败：浏览器未授权剪贴板，请手动选中复制");
   }
 }
 
@@ -2692,7 +2803,7 @@ function renderGlossary() {
 // 回答里的引用编号渲染成可点击 chip，点开可看原评论。
 // ============================================================
 const CHAT_MAX_TURNS = 6;         // 随请求带回的历史消息上限（不含本轮的检索内容）
-const CHAT_TOP_K = 6;             // 每轮注入的真实评论条数
+const CHAT_TOP_K = 8;             // 每轮注入的真实评论条数（提量以支撑更深的归纳）
 let CHAT_BUSY = false;
 let CHAT_HISTORY = [];            // [{ role:"user"|"assistant", content }]
 const CHAT_USED_IDS = new Set();  // 已引用过的 review_id，后续轮次优先排除，避免反复引用同几条
@@ -2703,9 +2814,22 @@ const CHAT_SYSTEM_PROMPT = `你是自走棋品类的产品分析师，正在帮�
 - 只依据【本页数据摘要】和本轮【检索到的真实评论】作答；两者都未覆盖的，直接写"当前数据未覆盖"，不做推测。
 - 引用到具体评论时，在对应句子末尾用方括号写出该评论的 id，如 [49790041]；没有具体引用就不要写方括号。
 - 引用数字须与数据一致，不做换算或改写。
-- 直接作答，不写开场白与结束语，不说明自身工作过程。
-- 不用"综上所述""值得注意的是""不难看出"等套话，也不用"赋能""抓手""闭环"等空泛行话。
 - 问题若与本页数据无关，说明你只能回答与这份数据相关的问题。
+
+回答的充分度（重要）：
+- 不要只给一两句概括就收尾。先给出明确结论，再把支撑结论的证据分层展开，最后归纳玩家观点。
+- 篇幅按问题复杂度伸缩：单纯事实问题 200-400 字；涉及成因、对比、趋势的问题 400-800 字。宁可有细节，不要空泛拉长。
+- 深度来自具体：落到具体机制/角色/阵营/玩家阶段/数字/玩家的原话上，而不是抽象判断。多引用本轮检索到的评论内容与其核心说法。
+- 复杂问题可用 2-4 个 markdown 小标题组织（### 或加粗），每个小标题下必须有实质内容，不得只写一句就换行。
+- 严禁为凑长度重复已说过的内容、堆砌同义句或写空洞过渡句。
+- 不用"综上所述""值得注意的是""不难看出"等套话，也不用"赋能""抓手""闭环"等空泛行话。
+- 不写客套开场（如"这是一个很好的问题"），不写水结尾（如"希望对你有帮助"），不必说明自身工作过程。
+
+玩家观点总结（每条回答的最后一段，必须写）：
+- 归纳的是"玩家怎么说"，不是复述你自己的结论。用小标题或加粗句"玩家观点总结"起头。
+- 按观点分档写：主流说法（多数评论支持，可含高赞评论）、少数说法（个别或少量评论提及）、争议点（存在相互矛盾的说法）。
+- 尽量给出可核实的口径，如"约 N 条评论提到""点赞最高的评论认为""仅个别玩家提及"，并附代表性引用 id。
+- 某档在本轮证据里没有出现，就明确写"本轮检索到的评论中未见相关说法"，不要编造或拿常识补位。
 
 数据性质与事实纪律：
 - 【检索到的真实评论】是玩家的主观言论，可能包含事实错误、以讹传讹或个别极端说法，不能直接当作事实。
@@ -2820,8 +2944,24 @@ function autoGrowChatInput() {
   el.style.height = Math.min(el.scrollHeight, 140) + "px";
 }
 
+// 空态推荐问题：给一个"不用想问题就能开口"的起点，也顺带说明这份数据能问什么。
+// 全部是确定能在这份数据里答上来的问题，避免推荐出无数据的死问题。
+const CHAT_SUGGESTS = [
+  "万象棋差评里反复出现的问题是什么？",
+  "玩家认为哪些阵容或棋手需要削弱？",
+  "美术与 IP 对玩家留存的影响有多大？",
+];
+
+function chatSuggestHtml() {
+  return CHAT_SUGGESTS.map(q =>
+    `<button type="button" class="chat-suggest" data-q="${_esc(q)}">${_esc(q)}</button>`
+  ).join("");
+}
+
 const CHAT_HINT_HTML = `<div class="chat-hint text-slate-500 text-xs leading-relaxed">
-  对话已清空。可继续就这份数据提问，例如「万象棋差评里反复出现的问题是什么？」。</div>`;
+  <div>还没有提问。可继续就这份数据追问，也可以直接点下面的问题：</div>
+  <div class="chat-suggest-wrap">${chatSuggestHtml()}</div>
+</div>`;
 
 function clearChat() {
   if (CHAT_BUSY) return;
@@ -2882,7 +3022,7 @@ async function chatSend() {
         model: cfg.model,
         messages,
         temperature: 0.3,
-        max_tokens: 1500,   // 问答回答控制在千字内，给足余量
+        max_tokens: 3000,   // 允许较长回答（约 2000 汉字上限），配合提示词的长度要求；上限过低会截断长回答
         thinking: { type: "disabled" },   // 关思考模式，否则 content 可能为 null
       }),
     });
@@ -2923,9 +3063,59 @@ async function chatSend() {
   }
 }
 
+// —— 形态 Tab（报告 / 问答）+ 设置分段 Tab（连接 / 提示词 / 术语表） ——
+function showAITab(name) {
+  document.querySelectorAll(".ai-tab").forEach(b =>
+    b.classList.toggle("active", b.getAttribute("data-ai-tab") === name));
+  const rep = document.getElementById("ai-tab-report");
+  const chat = document.getElementById("ai-tab-chat");
+  if (rep) rep.classList.toggle("hidden", name !== "report");
+  if (chat) chat.classList.toggle("hidden", name !== "chat");
+  if (name === "chat") {
+    const input = document.getElementById("ai-chat-input");
+    if (input) input.focus();
+  }
+}
+
+function showAISetPanel(name) {
+  document.querySelectorAll(".ai-set-tab").forEach(b =>
+    b.classList.toggle("active", b.getAttribute("data-ai-set") === name));
+  ["conn", "prompt", "kb"].forEach(k => {
+    const p = document.getElementById("ai-set-panel-" + k);
+    if (p) p.classList.toggle("hidden", k !== name);
+  });
+}
+
 // 引用 chip → 在整段对话里查找对应的引用来源卡，展开并高亮（事件委托）
 // 跨轮次查找：历史回答里引用的评论，卡片在那一轮的消息里，同样可跳转过去。
 document.addEventListener("click", function (e) {
+  // 形态 Tab：报告 / 问答
+  const aiTab = e.target.closest("[data-ai-tab]");
+  if (aiTab) {
+    const name = aiTab.getAttribute("data-ai-tab");
+    showAITab(name);
+    trackEvt("ai_tab_switch", { tab: name });
+    return;
+  }
+  // 设置分段 Tab：连接 / 提示词 / 术语表
+  const setTab = e.target.closest("[data-ai-set]");
+  if (setTab) {
+    const name = setTab.getAttribute("data-ai-set");
+    showAISetPanel(name);
+    if (name === "kb") renderGlossary();   // 真去看时才补渲染一次
+    return;
+  }
+  // 空态推荐问题：点一下直接发问（走事件委托，避免把页面初始化误记为用户交互）
+  const suggest = e.target.closest(".chat-suggest");
+  if (suggest) {
+    const input = document.getElementById("ai-chat-input");
+    if (!input) return;
+    input.value = suggest.getAttribute("data-q") || "";
+    autoGrowChatInput();
+    chatSend();
+    return;
+  }
+
   const chip = e.target.closest(".chat-cite");
   if (!chip) return;
   const id = chip.getAttribute("data-cite");
@@ -2989,7 +3179,7 @@ function trackModuleReach(id) {
 // ============================================================
 function initModuleNav() {
   const pills = document.querySelectorAll("[data-nav]");
-  const blocks = ["module-compare", "module-overview", "module-voice", "module-persona", "module-conclusion"]
+  const blocks = ["module-compare", "module-overview", "module-voice", "module-persona", "module-conclusion", "module-ai"]
     .map(id => document.getElementById(id))
     .filter(Boolean);
   if (!pills.length || !blocks.length) return;
