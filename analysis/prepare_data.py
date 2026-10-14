@@ -461,7 +461,7 @@ def attach_stage_phrases(df, data):
         phrase_masks = []
         for p, polarity in phrases:
             aliases = [a for a in dict.fromkeys([p["phrase"]] + p.get("aliases", [])) if len(a) >= 2]
-            matcher = _prepare_matcher(aliases, [k for k in p.get("keywords", []) if len(k) >= 2])
+            matcher = _prepare_matcher(aliases, [k for k in p.get("keywords", []) if len(k) >= 2], p["phrase"])
             mask = contents.apply(lambda t: _hit(t, matcher))
             if mask.sum() == 0:
                 continue
@@ -663,7 +663,7 @@ def _build_pain_candidates(df, data, game, llm_phrases):
         keywords = [k for k in p.get("keywords", []) if len(k) >= 2]
         if not aliases and not keywords:
             continue
-        matcher = _prepare_matcher(aliases, keywords)
+        matcher = _prepare_matcher(aliases, keywords, p["phrase"])
         mask = contents.apply(lambda t: _hit(t, matcher))
         _add("phrase", p["phrase"], mask, {"phrase": p["phrase"], "phrase_ratio": p.get("ratio", "")})
 

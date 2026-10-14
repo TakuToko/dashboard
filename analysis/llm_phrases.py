@@ -36,6 +36,10 @@ from config import (
     LLM_PHRASE_TOP_N,
     CUSTOM_STOPWORDS,
     DOMAIN_WORDS,
+    POLARITY_AXIS_PAIRS,   # 🆕 方向轴守卫：短语方向 → 同向/反向词
+    POLARITY_AXIS_NOUNS,   # 🆕 轴名词：方向词须贴着它才算"对局时长"上的评价
+    POLARITY_WINDOW,       # 🆕 方向守卫取样半径
+    POLARITY_NOUN_GAP,     # 🆕 单字方向词与轴名词的最大间隔
 )
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -169,10 +173,86 @@ def _terms(text):
     return out
 
 
-def _prepare_matcher(aliases, keywords):
+# —— 前缀否定：词前一个字是这些字时方向反转（"时间不长" = 不长 → 其实是"短"）——
+_NEG_PREFIX_CHARS = ("不", "没", "无", "未", "别", "非", "莫", "勿")
+
+
+def _near_axis_noun(text, idx, w_len=1):
+    """
+    该方向词是否贴着「轴名词」出现 —— 区分"节奏快/时间久"（真评价）与
+    "快速上手/很久没玩/慢慢就能懂"（与对局时长无关）。
+    """
+    seg = text[max(0, idx - POLARITY_NOUN_GAP): idx + w_len + POLARITY_NOUN_GAP]
+    return any(n in seg for n in POLARITY_AXIS_NOUNS)
+
+
+def _is_valid_cue(ctx, i, w):
+    """单字方向词（长/短/快/慢/久/拖）的两道过滤：
+      ① 叠字不算评价（"慢慢""久久"）；
+      ② 不贴着轴名词不算（"快速上手""很久没玩"）。
+    多字方向词（太久/拖沓/紧凑…）本身已明确指向所评维度，不做额外限制。"""
+    if len(w) > 1:
+        return True
+    if ctx[i:i + 2] == w * 2:
+        return False
+    return _near_axis_noun(ctx, i, len(w))
+
+
+def _axis_guard(phrase):
+    """
+    识别短语所属的方向轴与朝向：短语含轴内某词时，取该词所在方向为「同向」。
+    返回 (同向词, 反向词) 或 None（短语不含任何轴词 → 不启用守卫，行为同旧版）。
+    """
+    p = str(phrase).lower()
+    if not p:
+        return None
+    for same, reverse in POLARITY_AXIS_PAIRS:
+        for group, other in ((same, reverse), (reverse, same)):
+            for w in group:
+                i = p.find(w)
+                if i != -1 and _is_valid_cue(p, i, w):
+                    return group, other
+    return None
+
+
+def _count_cues(ctx, words, negated=False):
+    """统计 words 在 ctx 中的出现；negated=True 时只数被前缀否定的出现（"不长"）。
+    每个词最多计 1 次，避免同一个词反复出现放大权重。"""
+    n = 0
+    for w in words:
+        i = ctx.find(w)
+        while i != -1:
+            if not _is_valid_cue(ctx, i, w):
+                i = ctx.find(w, i + 1)
+                continue
+            if (i > 0 and ctx[i - 1] in _NEG_PREFIX_CHARS) == negated:
+                n += 1
+                break
+            i = ctx.find(w, i + 1)
+    return n
+
+
+def _polarity_ok(text_lower, spans, guard, margin):
+    """
+    方向一致性判定（极性匹配的核心）：
+      · 邻域出现同向词（含被否定的反向词，如"不长"）→ 同一诉求，保留
+      · 只出现反向词（如"节奏快""时间短"）→ 方向相反，否决
+      · 两者都没出现（表述隐性，如"一把二十分钟"）→ 保留，避免误杀
+    """
+    if not guard:
+        return True
+    agree, reverse = guard
+    ctx = "".join(text_lower[max(0, s - margin):e + margin] for s, e in spans)
+    if _count_cues(ctx, agree) + _count_cues(ctx, reverse, negated=True) > 0:
+        return True
+    return _count_cues(ctx, reverse) + _count_cues(ctx, agree, negated=True) == 0
+
+
+def _prepare_matcher(aliases, keywords, phrase=""):
     """
     把别名/关键词预切成词（每条短语只切一次，避免在逐条评论的循环里重复 jieba 分词）。
-    返回 (别名小写列表, [(实词集合, 需命中数)], 关键词小写列表)
+    返回 (别名小写列表, [(实词集合, 需命中数)], 关键词小写列表, 方向守卫)
+    —— phrase 用于判定该短语的方向轴；不传则不启用方向守卫（与旧版口径一致）。
     """
     aliases_lower = [a.lower() for a in aliases]
     token_rules = []
@@ -181,31 +261,55 @@ def _prepare_matcher(aliases, keywords):
         if len(toks) >= 2:
             token_rules.append((toks, max(2, (len(toks) + 1) // 2)))
     keywords_lower = [k.lower() for k in keywords if len(k) >= 2]
-    return aliases_lower, token_rules, keywords_lower
+    return aliases_lower, token_rules, keywords_lower, _axis_guard(phrase)
 
 
-def _hit(text_lower, matcher):
+def _collect_spans(text_lower, matcher):
     """
-    判定一条评论是否命中某短语：
+    三级宽松匹配，返回命中片段的位置列表（位置供方向守卫取邻域用）：
       1) 任一别名整串字面命中（别名本身若是评论里的真实片段，这条最快）
       2) 任一别名分词后命中「法定人数」个实词（2 词需 2 个、5 词需 3 个…）
          —— 覆盖"多概念拼接串"，同时避免长别名靠两个常见词就误命中
       3) ≥2 个关键词同时命中（覆盖"口语改写"）
     """
-    aliases_lower, token_rules, keywords_lower = matcher
+    aliases_lower, token_rules, keywords_lower, _ = matcher
+    spans = []
 
     for a in aliases_lower:
-        if a in text_lower:
-            return True
+        i = text_lower.find(a)
+        while i != -1:
+            spans.append((i, i + len(a)))
+            i = text_lower.find(a, i + 1)
 
     for toks, need in token_rules:
-        if sum(1 for t in toks if t in text_lower) >= need:
-            return True
+        hit = [t for t in toks if t in text_lower]
+        if len(hit) >= need:
+            spans += [(text_lower.find(t), text_lower.find(t) + len(t)) for t in hit]
 
-    if len(keywords_lower) >= 2 and sum(1 for k in keywords_lower if k in text_lower) >= 2:
+    if len(keywords_lower) >= 2:
+        hit = [k for k in keywords_lower if k in text_lower]
+        if len(hit) >= 2:
+            spans += [(text_lower.find(k), text_lower.find(k) + len(k)) for k in hit]
+
+    return spans
+
+
+def _match(text_lower, matcher, use_guard=True):
+    """
+    命中判定。use_guard=False 时只做字面/关键词匹配（用于量化方向守卫剔除了多少条命中），
+    其余场景一律使用默认值。
+    """
+    spans = _collect_spans(text_lower, matcher)
+    if not spans:
+        return False
+    if not use_guard:
         return True
+    return _polarity_ok(text_lower, spans, matcher[3], POLARITY_WINDOW)
 
-    return False
+
+def _hit(text_lower, matcher):
+    """判定一条评论是否命中某短语（含方向守卫）——对外口径与旧版一致，返回 bool。"""
+    return _match(text_lower, matcher)
 
 
 # =========================================================
@@ -447,11 +551,18 @@ def anchor_phrases(df, phrases_by_game):
                 if not aliases and not keywords:
                     continue
 
-                # 三级宽松匹配（整串字面 / 别名分词法定人数 / 关键词≥2个），详见 _hit()
-                matcher = _prepare_matcher(aliases, keywords)
+                # 三级宽松匹配（整串字面 / 别名分词法定人数 / 关键词≥2个）+ 方向守卫，详见 _match()
+                matcher = _prepare_matcher(aliases, keywords, p["phrase"])
                 mask = contents.apply(lambda t: _hit(t.lower(), matcher))
                 matched = gdf[mask]
                 cnt = len(matched)
+                if matcher[3]:
+                    # 启用了方向守卫的短语：再算一次不做守卫的命中数，便于核对剔除效果
+                    raw_cnt = int(contents.apply(
+                        lambda t: _match(t.lower(), matcher, use_guard=False)).sum())
+                    if raw_cnt > cnt:
+                        print(f"         ↳ 方向守卫「{p['phrase']}」：{raw_cnt} → {cnt} 条"
+                              f"（剔除 {raw_cnt - cnt} 条方向相反的命中）")
                 if cnt == 0:
                     continue  # 过滤未被证实的短语，避免"0% 提及"噪声
 
