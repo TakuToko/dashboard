@@ -63,6 +63,11 @@ from config import (
     MECHANIC_COMPARE,    # 竞品机制对比表
     STAGE_PHRASE_MIN_HITS,  # 🆕 阶段×原因短语矩阵：最小命中数
     STAGE_PHRASE_TOP_N,     # 🆕 阶段×原因短语矩阵：每阶段展示条数
+    PAIN_TAG_CANDIDATES,    # 🆕 痛点判定：必盯维度白名单（痛点来源之一）
+    INSIGHT_PAIN_MIN_RATIO, # 🆕 痛点判定：提及率下限
+    INSIGHT_PAIN_MIN_COUNT, # 🆕 痛点判定：绝对条数下限
+    INSIGHT_UP_WEIGHT_CAP,  # 🆕 痛点判定：点赞加权上限
+    INSIGHT_SEV_BANDS,      # 🆕 严重度分档：加权提及率 → 档位
 )
 import utils  # 🆕 爬虫工具（含 App 详情接口）
 from llm_phrases import (  # 🆕 LLM 原因短语抽取（阶段A归纳 + 阶段B锚定）
@@ -583,6 +588,104 @@ def compute_bm25_index(df):
 # =========================================================
 # 9. 规则化分析引擎（可追溯的结构化结论 + LLM prompt 上下文）
 # =========================================================
+
+def _like_weight(ups, cap=INSIGHT_UP_WEIGHT_CAP):
+    """单条评论的点赞权重 = 1 + sqrt(min(点赞数, cap))。
+    开方 + 封顶是为了让「被大量点赞的差评」更有分量，又不被个别爆款带偏。"""
+    try:
+        u = float(ups) if ups is not None else 0.0
+    except (TypeError, ValueError):
+        u = 0.0
+    if u < 0:
+        u = 0.0
+    return 1.0 + (min(u, cap) ** 0.5)
+
+
+def _severity_from_rate(weighted_rate, count):
+    """用「点赞加权提及率 + 命中条数」算出严重度档位（不再写死）。
+    小样本保护：命中条数不足下限时，最多只给 info，避免"3 条评论就判高危"。"""
+    sev = "info"
+    for threshold, label in INSIGHT_SEV_BANDS:
+        if weighted_rate >= threshold:
+            sev = label
+            break
+    if count < INSIGHT_PAIN_MIN_COUNT and sev in ("high", "warning"):
+        return "info"
+    return sev
+
+
+def _build_pain_candidates(df, data, game, llm_phrases):
+    """构建某游戏的痛点候选，统一统计口径（一律在【该游戏全部评论】上算）。
+
+    候选来源两类：
+      A) 必盯维度白名单标签（PAIN_TAG_CANDIDATES）——保证 ELO/外挂/服务器/平衡 不被漏掉
+      B) LLM 归纳的差评 Top 短语——数据驱动，使白名单外的新问题也能浮出
+
+    每条候选输出：kind / label / count / rate（原始提及率%）/ weighted_rate（点赞加权提及率%）
+    """
+    gdf = df[df["游戏名称"] == game]
+    total = len(gdf)
+    if total == 0:
+        return []
+    contents = gdf["评论内容"].astype(str).str.lower()
+    weights = pd.to_numeric(gdf["点赞数"], errors="coerce").fillna(0).apply(_like_weight)
+    w_all = float(weights.sum()) or 1.0
+
+    cands = []
+
+    def _add(kind, label, mask, extra):
+        cnt = int(mask.sum())
+        if cnt == 0:
+            return
+        cands.append({
+            "kind": kind,
+            "label": label,
+            "count": cnt,
+            "rate": round(cnt / total * 100, 1),
+            "weighted_rate": round(float(weights[mask].sum()) / w_all * 100, 1),
+            "mask": mask,
+            **extra,
+        })
+
+    # A) 必盯维度标签
+    tag_ratios = {t["name"]: t["ratio"]
+                  for t in (data.get("player_persona", {}).get(game, {}).get("tag_distribution") or [])}
+    for tag in PAIN_TAG_CANDIDATES:
+        patterns = next((p for name, p in USER_TAG_RULES if name == tag), None)
+        if not patterns:
+            continue
+        mask = contents.apply(lambda t: any(re.search(p, t, re.IGNORECASE) for p in patterns))
+        _add("tag", tag.replace("关注", ""), mask, {"tag": tag, "tag_ratio": tag_ratios.get(tag, 0)})
+
+    # B) LLM 差评 Top 短语（无 LLM 时自动跳过，退回纯标签口径）
+    for p in (llm_phrases.get(game, {}).get("negative", []) or [])[:3]:
+        aliases = [a for a in dict.fromkeys([p["phrase"]] + p.get("aliases", [])) if len(a) >= 2]
+        keywords = [k for k in p.get("keywords", []) if len(k) >= 2]
+        if not aliases and not keywords:
+            continue
+        matcher = _prepare_matcher(aliases, keywords)
+        mask = contents.apply(lambda t: _hit(t, matcher))
+        _add("phrase", p["phrase"], mask, {"phrase": p["phrase"], "phrase_ratio": p.get("ratio", "")})
+
+    return cands
+
+
+def _samples_by_mask(gdf, mask, limit=5):
+    """按给定布尔掩码取命中评论样本（按点赞降序），供结论卡"可追溯样本"用。"""
+    sub = gdf[mask].copy()
+    if sub.empty:
+        return []
+    sub["_ups"] = pd.to_numeric(sub["点赞数"], errors="coerce").fillna(0)
+    sub = sub.sort_values("_ups", ascending=False).head(limit)
+    return [{
+        "review_id": str(r.get("评论ID", "")),
+        "content": str(r["评论内容"])[:200],
+        "score": int(r["评分"]),
+        "ups": int(pd.to_numeric(r.get("点赞数", 0), errors="coerce") or 0),
+        "game": str(r.get("游戏名称", "")),
+    } for _, r in sub.iterrows()]
+
+
 def analyze_insights(df, data):
     """
     规则化计算，不依赖 LLM，每条结论带证据锚点 + 触发该指标的评论样本
@@ -722,9 +825,7 @@ def analyze_insights(df, data):
                 })
 
     # —— 研究目标 2：万象棋核心诉求（痛点 + 正面）——
-    for game_name, severity_label in [(wzq, "high"), (jcc, "medium")]:
-        p = persona.get(game_name, {})
-        tags = {t["name"]: t["ratio"] for t in p.get("tag_distribution", [])}
+    for game_name in [wzq, jcc]:
         words_neg = word_freq.get(game_name, {}).get("negative", [])
         words_pos = word_freq.get(game_name, {}).get("positive", [])
 
@@ -733,58 +834,55 @@ def analyze_insights(df, data):
         neg_phrases = llm_phrases.get(game_name, {}).get("negative", [])
         pos_phrases = llm_phrases.get(game_name, {}).get("positive", [])
 
-        # 核心痛点
-        pain_tag = None
-        pain_ratio = 0
-        for tag_name in ["关注ELO/控牌", "关注外挂/脚本", "关注服务器/技术", "关注平衡/数值"]:
-            r = tags.get(tag_name, 0)
-            if r > pain_ratio:
-                pain_ratio = r
-                pain_tag = tag_name
+        # —— 核心痛点（数据驱动）——
+        # 候选 = 必盯维度标签（白名单）+ LLM 差评 Top 短语（数据驱动来源）；
+        # 口径统一在「该游戏全部评论」上统计，取「点赞加权提及率」最高者，
+        # 且必须同时通过「提及率 ≥ 下限 + 命中条数 ≥ 下限」双门槛；
+        # 严重度不再写死，由加权提及率算档（见 _severity_from_rate）。
+        gdf_game = df[df["游戏名称"] == game_name]
+        pain_cands = _build_pain_candidates(df, data, game_name, llm_phrases)
+        passed = [c for c in pain_cands
+                  if c["rate"] >= INSIGHT_PAIN_MIN_RATIO * 100 and c["count"] >= INSIGHT_PAIN_MIN_COUNT]
+        pain_cand = max(passed, key=lambda c: c["weighted_rate"]) if passed else None
 
-        if pain_tag and pain_ratio >= 10:
-            sq = pain_tag.replace("关注", "").replace("/", " ")
-            if neg_phrases:
-                # —— 走 LLM 短语：具体归因（如「阵容与棋手绑定过深」）+ 真实占比 ——
-                top_neg = neg_phrases[:3]
-                top_neg_plain = [x["phrase"] for x in top_neg]
-                top_neg_names = [f"{x['phrase']}（占差评 {x['ratio']}）" for x in top_neg]
-                insights.append({
-                    "dimension": "核心痛点", "target": game_name,
-                    "title": f"「{pain_tag.replace('关注', '')}」提及率 {pain_ratio}%",
-                    "search_query": f"{sq} " + " ".join(x["phrase"] for x in top_neg[:2]),
-                    "severity": severity_label,
-                    "detail": f"{game_name} {pain_ratio}% 的评论提到「{pain_tag}」，"
-                              f"热门差评的 Top 3 原因：{'；'.join(top_neg_plain)}。",
-                    "evidence": {
-                        "field": "llm_phrases.negative（LLM 归纳短语 + 规则引擎锚定占比）",
-                        "metrics": [{"k": pain_tag, "v": f"{pain_ratio}%"},
-                                    {"k": "差评Top3原因", "v": top_neg_names}],
-                        # 样本必须是「触发本条结论」的评论：即含 pain_tag 的差评，
-                        # 而不是 Top1 短语的样本（否则标题讲 ELO、样本讲阵容，读者会觉得无关）
-                        "sample_reviews": _samples(game_name, tags=[pain_tag], score_max=2, limit=5),
-                    }
-                })
+        if pain_cand:
+            pain_sev = _severity_from_rate(pain_cand["weighted_rate"], pain_cand["count"])
+            pain_label = pain_cand["label"]
+            top_neg = neg_phrases[:3]
+            # 具体归因：有 LLM 短语用短语，否则退回裸词频（并过滤无信息主题词）
+            if top_neg:
+                reason_text = f"热门差评的 Top 3 原因：{'；'.join(x['phrase'] for x in top_neg)}。"
+                reason_metric = {"k": "差评Top3原因", "v": [f"{x['phrase']}（占差评 {x['ratio']}）" for x in top_neg]}
+                reason_field = "llm_phrases.negative（LLM 归纳短语 + 规则引擎锚定占比）"
             else:
-                # —— 兜底：裸词频（无 LLM 短语时）——
-                # 二次过滤：排除游戏名等无信息主题词（词云保留，结论不显示）
                 words_neg_clean = [w for w in words_neg if w["name"] not in INSIGHT_NOISE_WORDS]
-                top_neg = words_neg_clean[0]["name"] if words_neg_clean else (words_neg[0]["name"] if words_neg else "—")
-                top_neg2 = words_neg_clean[1]["name"] if len(words_neg_clean) > 1 else (words_neg_clean[0]["name"] if len(words_neg_clean) == 1 else "—")
-                insights.append({
-                    "dimension": "核心痛点", "target": game_name,
-                    "title": f"「{pain_tag.replace('关注', '')}」提及率 {pain_ratio}%",
-                    "search_query": f"{sq} {top_neg} {top_neg2}",
-                    "severity": severity_label,
-                    "detail": f"{game_name} {pain_ratio}% 的评论提到「{pain_tag}」，"
-                              f"差评高频词 Top 2：{top_neg}、{top_neg2}。",
-                    "evidence": {
-                        "field": "player_persona + word_freq",
-                        "metrics": [{"k": pain_tag, "v": f"{pain_ratio}%"},
-                                    {"k": "差评Top2", "v": f"{top_neg}、{top_neg2}"}],
-                        "sample_reviews": _samples(game_name, tags=[pain_tag], score_max=2, limit=5),
-                    }
-                })
+                t1 = words_neg_clean[0]["name"] if words_neg_clean else (words_neg[0]["name"] if words_neg else "—")
+                t2 = words_neg_clean[1]["name"] if len(words_neg_clean) > 1 else "—"
+                reason_text = f"差评高频词 Top 2：{t1}、{t2}。"
+                reason_metric = {"k": "差评Top2", "v": f"{t1}、{t2}"}
+                reason_field = "player_persona + word_freq"
+
+            sq = pain_cand.get("tag", pain_label).replace("关注", "").replace("/", " ")
+            insights.append({
+                "dimension": "核心痛点", "target": game_name,
+                "title": f"「{pain_label}」提及率 {pain_cand['rate']}%",
+                "search_query": (f"{sq} " + " ".join(x["phrase"] for x in top_neg[:2])).strip(),
+                "severity": pain_sev,
+                "score": pain_cand["weighted_rate"],   # 同严重度档内做二级排序（加权提及率）
+                "detail": f"{game_name} {pain_cand['rate']}% 的评论提到「{pain_label}」"
+                          f"（点赞加权后 {pain_cand['weighted_rate']}%，命中 {pain_cand['count']} 条）；{reason_text}",
+                "evidence": {
+                    "field": reason_field,
+                    "metrics": [{"k": pain_label, "v": f"提及率 {pain_cand['rate']}%"},
+                                {"k": "点赞加权提及率", "v": f"{pain_cand['weighted_rate']}%"},
+                                {"k": "命中评论数", "v": f"{pain_cand['count']} 条"},
+                                reason_metric],
+                    # 样本对齐：直接取触发本条结论的命中评论（按点赞降序）
+                    "sample_reviews": _samples_by_mask(gdf_game, pain_cand["mask"], limit=5),
+                    "pain_label": pain_label,          # 供行动建议映射（不参与前端渲染）
+                    "pain_kind": pain_cand["kind"],
+                }
+            })
 
         # 正面亮点
         if pos_phrases:
@@ -888,15 +986,27 @@ def analyze_insights(df, data):
         "服务器/技术": ("优先修复稳定性问题", "针对闪退、卡屏、掉线做专项修复并周更跟进"),
         "平衡/数值":  ("优先处理平衡与数值问题", "针对被集中吐槽的阵容与棋手强度做数值回调，并公示调整依据"),
     }
-    if pain_item and pain_item.get("severity") == "high":
-        # 从证据锚点里取真实痛点标签（如「关注平衡/数值」→「平衡/数值」）
-        pain_label = next((m["k"].replace("关注", "")
-                           for m in pain_item.get("evidence", {}).get("metrics", [])
-                           if m.get("k", "").startswith("关注")), "核心痛点")
-        rec_title, rec_action = PAIN_ACTION_MAP.get(
-            pain_label, (f"优先处理{pain_label}问题", "按差评归因确定迭代优先级"))
+    if pain_item:
+        # 痛点标签/动作必须与结论口径一致，否则会出现「标题讲平衡、正文讲阵容、动作讲 ELO」的错位。
+        # 痛点标签由结论的 evidence 透传（pain_label），不再反解 metrics 文本。
+        pain_label = pain_item.get("evidence", {}).get("pain_label", "核心痛点")
+        pain_kind = pain_item.get("evidence", {}).get("pain_kind", "tag")
+        if pain_kind == "tag":
+            rec_title, rec_action = PAIN_ACTION_MAP.get(
+                pain_label, (f"优先处理{pain_label}问题", "按差评归因确定迭代优先级"))
+        else:
+            # 数据驱动命中（不在白名单里的新问题）：动作按该原因的评论证据定位
+            rec_title, rec_action = (f"优先处理「{pain_label}」",
+                                     "按该原因的评论证据定位到具体机制，确定迭代优先级")
+        # 优先级不再是「固定一条 P0」，而是由痛点严重度算出（high→P0，warning/medium→P1，info→P2）
+        prio_label, prio_icon = {
+            "high":    ("P0 紧急", "🔴"),
+            "warning": ("P1 重要", "🟡"),
+            "medium":  ("P1 重要", "🟡"),
+            "info":    ("P2 优化", "🟢"),
+        }.get(pain_item.get("severity"), ("P2 优化", "🟢"))
         recommendations.append({
-            "priority": "P0 紧急", "icon": "🔴", "target": wzq,
+            "priority": prio_label, "icon": prio_icon, "target": wzq,
             "from_dimension": "核心痛点",   # 供首屏「核心发现」摘要回链对应结论
             "title": rec_title,
             "action": rec_action,
@@ -976,13 +1086,15 @@ def _build_key_findings(insights, recommendations, top_n=3):
     """
     生成首屏「核心发现」摘要。
 
-    只取 main 组（万象棋主线），按严重度降序排，每条尽量回链到对应的行动建议。
+    只取 main 组（万象棋主线），按严重度降序排，同档再按 score（点赞加权提及率）降序，
+    每条尽量回链到对应的行动建议。
     —— 报告改成漏斗式（结论在最末）后，摘要让决策者不必滚到底就能看到结论。
     —— 控制在 3 条：一屏读完，更多细节留给模块 ⑤ 的完整结论。
     """
     SEV_RANK = {"high": 0, "warning": 1, "medium": 2, "info": 3}
     main_items = sorted([i for i in insights if i.get("group") == "main"],
-                        key=lambda i: SEV_RANK.get(i.get("severity"), 9))
+                        key=lambda i: (SEV_RANK.get(i.get("severity"), 9),
+                                       -float(i.get("score", 0))))
 
     findings = []
     for item in main_items[:top_n]:
